@@ -3,7 +3,7 @@ import type { Section } from "@/lib/auth/roles";
 import type { CurrentUser } from "@/lib/auth/current-user";
 
 /** Shown when a signed-in user opens a section their role doesn't include. */
-export function NoAccess({ section, user }: { section: Section; user: CurrentUser }) {
+export function NoAccess({ section, user }: { section: Pick<Section, "label">; user: CurrentUser }) {
   return (
     <div className="mx-auto mt-16 max-w-md rounded-lg border bg-card p-6 text-center">
       <Lock className="mx-auto size-5 text-muted-foreground" />

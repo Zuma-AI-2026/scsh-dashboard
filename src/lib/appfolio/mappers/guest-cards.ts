@@ -1,53 +1,63 @@
 import type { ReportRow } from "../client";
-import { compositeKey, pick, str, timestamp } from "./helpers";
+import { dateOnly, int, num, str, timestamp } from "./helpers";
 
 /**
- * raw guest card rows  ->  public.guest_cards   (leads)
+ * guest_cards -> public.guest_cards
  *
- * TODO(after discovery): confirm report name (`guest_cards` / `guest_card`)
- * and replace candidate column names with the real ones.
+ * ALLOWLIST. This report contains sensitive applicant data; only the columns
+ * below are kept and NO raw copy is stored. Deliberately dropped:
+ * monthly_income, credit_score, pet_preference, notes.
  */
 export type GuestCardRow = {
-  id: string;
-  created_at: string | null;
+  guest_card_id: number;
+  guest_card_uuid: string | null;
+  inquiry_id: number | null;
   name: string | null;
-  email: string | null;
-  phone: string | null;
-  property_name: string | null;
-  unit_name: string | null;
-  bedrooms_wanted: string | null;
-  desired_move_in: string | null;
-  source: string | null;
-  agent: string | null;
+  email_address: string | null;
+  phone_number: string | null;
+  received: string | null;
+  last_activity_date: string | null;
+  last_activity_type: string | null;
   status: string | null;
-  last_activity_at: string | null;
-  notes: string | null;
-  raw: ReportRow;
+  move_in_preference: string | null;
+  max_rent: number | null;
+  bed_bath_preference: string | null;
+  lead_type: string | null;
+  source: string | null;
+  property_id: number | null;
+  property_name: string | null;
+  unit_id: number | null;
+  unit: string | null;
+  assigned_user: string | null;
+  assigned_user_id: number | null;
+  tenant_id: number | null;
 };
 
 export function mapGuestCard(row: ReportRow): GuestCardRow | null {
-  const explicitId = str(pick(row, "guest_card_id", "Guest Card Id", "id", "Id"));
-  const name = str(pick(row, "name", "Name", "guest_name", "Guest Name", "prospect", "Prospect"));
-  const email = str(pick(row, "email", "Email"));
-  const phone = str(pick(row, "phone", "Phone", "phone_number", "Phone Number"));
-  const created = timestamp(pick(row, "created_at", "Created At", "created", "Created", "date_created", "Date Created"));
-  if (!explicitId && !name && !email) return null;
-
+  const guest_card_id = int(row.guest_card_id);
+  if (guest_card_id === null) return null;
   return {
-    id: explicitId ?? compositeKey(name, email ?? phone, created),
-    created_at: created,
-    name,
-    email,
-    phone,
-    property_name: str(pick(row, "property_name", "Property Name", "property", "Property", "interested_property")),
-    unit_name: str(pick(row, "unit_name", "Unit Name", "unit", "Unit", "interested_unit")),
-    bedrooms_wanted: str(pick(row, "bedrooms", "Bedrooms", "desired_bedrooms")),
-    desired_move_in: timestamp(pick(row, "desired_move_in", "Desired Move-in", "move_in_date", "Move In Date")),
-    source: str(pick(row, "source", "Source", "lead_source", "Lead Source", "marketing_source", "Marketing Source")),
-    agent: str(pick(row, "agent", "Agent", "leasing_agent", "Leasing Agent", "assigned_to", "Assigned To")),
-    status: str(pick(row, "status", "Status", "stage", "Stage")),
-    last_activity_at: timestamp(pick(row, "last_activity", "Last Activity", "last_activity_at", "updated_at", "Updated At", "last_contacted", "Last Contacted")),
-    notes: str(pick(row, "notes", "Notes", "comments", "Comments")),
-    raw: row,
+    guest_card_id,
+    guest_card_uuid: str(row.guest_card_uuid),
+    inquiry_id: int(row.inquiry_id),
+    name: str(row.name),
+    email_address: str(row.email_address),
+    phone_number: str(row.phone_number),
+    received: timestamp(row.received),
+    last_activity_date: dateOnly(row.last_activity_date),
+    last_activity_type: str(row.last_activity_type),
+    status: str(row.status),
+    move_in_preference: str(row.move_in_preference),
+    max_rent: num(row.max_rent),
+    bed_bath_preference: str(row.bed_bath_preference),
+    lead_type: str(row.lead_type),
+    source: str(row.source),
+    property_id: int(row.property_id),
+    property_name: str(row.property_name),
+    unit_id: int(row.unit_id),
+    unit: str(row.unit),
+    assigned_user: str(row.assigned_user),
+    assigned_user_id: int(row.assigned_user_id),
+    tenant_id: int(row.tenant_id),
   };
 }

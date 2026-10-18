@@ -4,17 +4,20 @@ import { Button } from "@/components/ui/button";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { canAccessSection, SECTIONS } from "@/lib/auth/roles";
 import type { SyncState } from "@/lib/sync/state";
-import { NavLinks } from "./nav-links";
+import { NavLinks, type NavItem } from "./nav-links";
 import { SyncIndicator } from "./sync-indicator";
 
 export function AppHeader({ user, sync }: { user: CurrentUser; sync: SyncState | null }) {
-  const items = SECTIONS.map((s) => ({
+  const items: NavItem[] = SECTIONS.map((s) => ({
     key: s.key,
     label: s.label,
     href: s.href,
     available: s.available,
     allowed: canAccessSection(user.role, s),
   }));
+  if (user.role === "admin") {
+    items.push({ key: "admin", label: "Admin", href: "/admin", available: true, allowed: true });
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">

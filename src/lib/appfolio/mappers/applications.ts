@@ -1,47 +1,77 @@
 import type { ReportRow } from "../client";
-import { compositeKey, pick, str, timestamp } from "./helpers";
+import { bool, dateOnly, int, num, str, timestamp } from "./helpers";
 
 /**
- * raw application rows  ->  public.applications
+ * rental_applications -> public.applications
  *
- * TODO(after discovery): confirm report name (`applications` /
- * `application_detail` / `rental_applications`) and column names.
+ * ALLOWLIST. This report contains sensitive applicant data (addresses, rent
+ * history, employer, salary, pets, email, phone). Only the columns below are
+ * kept and NO raw copy is stored.
  */
 export type ApplicationRow = {
-  id: string;
-  applicant_name: string | null;
-  email: string | null;
-  phone: string | null;
-  property_name: string | null;
-  unit_name: string | null;
-  status: string | null;
-  submitted_at: string | null;
-  status_changed_at: string | null;
+  rental_application_id: number;
+  rental_application_group_id: number | null;
+  inquiry_id: number | null;
+  applicants: string | null;
+  received: string | null;
   desired_move_in: string | null;
-  agent: string | null;
-  lease_signed_at: string | null;
-  raw: ReportRow;
+  lead_source: string | null;
+  applicant_reported_source: string | null;
+  status: string | null;
+  application_status: string | null;
+  screening: string | null;
+  screened_on: string | null;
+  approved_at: string | null;
+  denied_at: string | null;
+  canceled_at: string | null;
+  decision_made_at: string | null;
+  time_to_conversion: number | null;
+  application_fee_paid: boolean | null;
+  assigned_user: string | null;
+  assigned_user_id: number | null;
+  created_by: string | null;
+  property_id: number | null;
+  property_name: string | null;
+  unit_id: number | null;
+  unit_name: string | null;
+  move_in_date: string | null;
+  lease_start_date: string | null;
+  lease_end_date: string | null;
+  tenant_id: number | null;
 };
 
 export function mapApplication(row: ReportRow): ApplicationRow | null {
-  const explicitId = str(pick(row, "application_id", "Application Id", "id", "Id"));
-  const applicant = str(pick(row, "applicant", "Applicant", "applicant_name", "Applicant Name", "name", "Name"));
-  const submitted = timestamp(pick(row, "submitted_at", "Submitted At", "application_date", "Application Date", "submitted", "Submitted", "created_at", "Created At"));
-  if (!explicitId && !applicant) return null;
-
+  const rental_application_id = int(row.rental_application_id);
+  if (rental_application_id === null) return null;
   return {
-    id: explicitId ?? compositeKey(applicant, submitted),
-    applicant_name: applicant,
-    email: str(pick(row, "email", "Email")),
-    phone: str(pick(row, "phone", "Phone")),
-    property_name: str(pick(row, "property_name", "Property Name", "property", "Property")),
-    unit_name: str(pick(row, "unit_name", "Unit Name", "unit", "Unit")),
-    status: str(pick(row, "status", "Status", "application_status", "Application Status")),
-    submitted_at: submitted,
-    status_changed_at: timestamp(pick(row, "status_changed_at", "Status Changed At", "status_date", "Status Date", "updated_at", "Updated At")),
-    desired_move_in: timestamp(pick(row, "desired_move_in", "Desired Move-in", "move_in_date", "Move In Date", "Move-In Date")),
-    agent: str(pick(row, "agent", "Agent", "leasing_agent", "Leasing Agent")),
-    lease_signed_at: timestamp(pick(row, "lease_signed_at", "Lease Signed At", "lease_signed", "Lease Signed", "signed_date", "Signed Date")),
-    raw: row,
+    rental_application_id,
+    rental_application_group_id: int(row.rental_application_group_id),
+    inquiry_id: int(row.inquiry_id),
+    applicants: str(row.applicants),
+    received: timestamp(row.received),
+    desired_move_in: dateOnly(row.desired_move_in),
+    lead_source: str(row.lead_source),
+    applicant_reported_source: str(row.applicant_reported_source),
+    status: str(row.status),
+    application_status: str(row.application_status),
+    screening: str(row.screening),
+    screened_on: dateOnly(row.screened_on),
+    approved_at: timestamp(row.approved_at),
+    denied_at: timestamp(row.denied_at),
+    canceled_at: timestamp(row.canceled_at),
+    decision_made_at: timestamp(row.decision_made_at),
+    time_to_conversion: num(row.time_to_conversion),
+    application_fee_paid: bool(row.application_fee_paid),
+    assigned_user: str(row.assigned_user),
+    assigned_user_id: int(row.assigned_user_id),
+    created_by: str(row.created_by),
+    property_id: int(row.property_id),
+    property_name: str(row.property_name),
+    unit_id: int(row.unit_id),
+    unit_name: str(row.unit_name),
+    move_in_date: dateOnly(row.move_in_date),
+    lease_start_date: dateOnly(row.lease_start_date),
+    lease_end_date: dateOnly(row.lease_end_date),
+    tenant_id: int(row.tenant_id),
   };
 }

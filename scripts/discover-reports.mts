@@ -11,26 +11,24 @@
  * Add names:  edit CANDIDATE_REPORTS below, or pass extra names as args:
  *        npm run discover -- some_other_report another_one
  *
+ * A 1.5s pause is kept between probes — AppFolio returned HTTP 429 when hit
+ * back-to-back.
+ *
  * Read-only: only report endpoints are called.
  */
 import { credentialsFromEnv, reportUrl, requestWithRetry, type ReportRow } from "../src/lib/appfolio/client.ts";
 
+// Confirmed working on 2026-10-18. Names that returned 400 "Id is not a valid
+// report" were removed. tenant_directory exists but is not synced in phase 1.
 const CANDIDATE_REPORTS: string[] = [
-  "rent_roll",
-  "unit_directory",
-  "unit_vacancy_detail",
-  "unit_vacancy",
-  "tenant_directory",
   "property_directory",
+  "unit_directory",
+  "unit_vacancy",
+  "rent_roll",
   "guest_cards",
-  "guest_card",
   "showings",
-  "showing_detail",
-  "applications",
-  "application_detail",
-  "leasing_activity",
   "rental_applications",
-  "work_order_detail",
+  "tenant_directory",
 ];
 
 type Outcome = {
@@ -116,7 +114,8 @@ async function main() {
   console.log(`AppFolio report discovery — ${creds.db}.appfolio.com — ${names.length} candidates\n`);
 
   const results: Outcome[] = [];
-  for (const name of names) {
+  for (const [i, name] of names.entries()) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 1500));
     process.stdout.write(`▸ ${name.padEnd(24)} `);
     try {
       const r = await probe(name);

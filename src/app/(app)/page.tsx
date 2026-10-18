@@ -51,6 +51,17 @@ export default async function HomePage() {
           );
         })}
       </div>
+
+      {user.role === "admin" && (
+        <div className="mt-6 flex flex-wrap gap-3 text-sm">
+          <Link href="/admin" className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            Admin · sync status
+          </Link>
+          <Link href="/admin/properties" className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            Admin · review managed properties
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

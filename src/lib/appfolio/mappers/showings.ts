@@ -1,44 +1,59 @@
 import type { ReportRow } from "../client";
-import { compositeKey, pick, str, timestamp } from "./helpers";
+import { dateOnly, int, num, str, timestamp } from "./helpers";
 
-/**
- * raw showing rows  ->  public.showings
- *
- * TODO(after discovery): confirm report name (`showings` / `showing_detail`)
- * and replace candidate column names with the real ones.
- */
+/** showings -> public.showings */
 export type ShowingRow = {
-  id: string;
-  scheduled_at: string | null;
-  guest_card_id: string | null;
-  lead_name: string | null;
-  property_name: string | null;
-  unit_name: string | null;
-  agent: string | null;
-  status: string | null; // scheduled / completed / cancelled / no-show …
-  outcome: string | null;
-  notes: string | null;
-  raw: ReportRow;
+  showing_id: number;
+  guest_card_id: number | null;
+  inquiry_id: number | null;
+  guest_card_name: string | null;
+  property_id: number | null;
+  unit_id: number | null;
+  showing_unit: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  showing_time: string | null;
+  confirmation_time: string | null;
+  assigned_user: string | null;
+  assigned_user_id: number | null;
+  description: string | null;
+  status: string | null;
+  type: string | null;
+  source: string | null;
+  inquiry_type: string | null;
+  last_activity_date: string | null;
+  last_activity_type: string | null;
+  rental_application_id: number | null;
+  rental_application_status: string | null;
+  showing_to_application_time: number | null;
 };
 
 export function mapShowing(row: ReportRow): ShowingRow | null {
-  const explicitId = str(pick(row, "showing_id", "Showing Id", "id", "Id"));
-  const scheduled = timestamp(pick(row, "showing_date", "Showing Date", "scheduled_at", "Scheduled At", "date", "Date", "start_time", "Start Time"));
-  const lead = str(pick(row, "guest_name", "Guest Name", "name", "Name", "prospect", "Prospect", "lead", "Lead"));
-  const unit = str(pick(row, "unit_name", "Unit Name", "unit", "Unit"));
-  if (!explicitId && !scheduled) return null;
-
+  const showing_id = int(row.showing_id);
+  if (showing_id === null) return null;
   return {
-    id: explicitId ?? compositeKey(lead, unit, scheduled),
-    scheduled_at: scheduled,
-    guest_card_id: str(pick(row, "guest_card_id", "Guest Card Id")),
-    lead_name: lead,
-    property_name: str(pick(row, "property_name", "Property Name", "property", "Property")),
-    unit_name: unit,
-    agent: str(pick(row, "agent", "Agent", "leasing_agent", "Leasing Agent", "shown_by", "Shown By")),
-    status: str(pick(row, "status", "Status")),
-    outcome: str(pick(row, "outcome", "Outcome", "result", "Result", "feedback", "Feedback")),
-    notes: str(pick(row, "notes", "Notes", "comments", "Comments")),
-    raw: row,
+    showing_id,
+    guest_card_id: int(row.guest_card_id),
+    inquiry_id: int(row.inquiry_id),
+    guest_card_name: str(row.guest_card_name),
+    property_id: int(row.property_id),
+    unit_id: int(row.unit_id),
+    showing_unit: str(row.showing_unit),
+    created_at: timestamp(row.created_at),
+    created_by: str(row.created_by),
+    showing_time: timestamp(row.showing_time),
+    confirmation_time: timestamp(row.confirmation_time),
+    assigned_user: str(row.assigned_user),
+    assigned_user_id: int(row.assigned_user_id),
+    description: str(row.description),
+    status: str(row.status),
+    type: str(row.type),
+    source: str(row.source),
+    inquiry_type: str(row.inquiry_type),
+    last_activity_date: dateOnly(row.last_activity_date),
+    last_activity_type: str(row.last_activity_type),
+    rental_application_id: int(row.rental_application_id),
+    rental_application_status: str(row.rental_application_status),
+    showing_to_application_time: num(row.showing_to_application_time),
   };
 }

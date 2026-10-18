@@ -1,106 +1,247 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { SALES_REPORTS, type SalesReportConfig } from "./mappers";
+import { AppfolioError, type ReportRow } from "./client";
+import { mapApplication } from "./mappers/applications";
+import { mapGuestCard } from "./mappers/guest-cards";
+import { mapProperty } from "./mappers/properties";
+import { mapShowing } from "./mappers/showings";
+import { mergeUnits } from "./mappers/units";
+import { PAUSE_BETWEEN_REPORTS_MS, paramsFor, SALES_REPORTS, type ReportSpec, type SalesReportName } from "./reports";
 import { runReport } from "./runReport";
 
-export type ReportSyncOutcome = {
-  report: string;
-  table: string;
-  status: "success" | "error" | "skipped";
-  rawRows: number;
-  cleanRows: number;
+export type ReportOutcome = {
+  report: SalesReportName;
+  status: "success" | "error";
+  rows: number;
+  pages: number;
   durationMs: number;
+  /** False when AppFolio rejected from/to and we re-ran without them. */
+  dateParamsAccepted: boolean | null;
+  rawStored: boolean;
+  error?: string;
+};
+
+export type TableOutcome = {
+  table: "properties" | "units" | "guest_cards" | "showings" | "applications";
+  status: "success" | "error" | "skipped";
+  written: number;
+  note?: string;
   error?: string;
 };
 
 export type SalesSyncResult = {
   startedAt: string;
   finishedAt: string;
+  durationMs: number;
   status: "success" | "error";
-  reports: ReportSyncOutcome[];
+  dateRange: { from_date: string; to_date: string } | null;
+  reports: ReportOutcome[];
+  tables: TableOutcome[];
 };
 
 const UPSERT_BATCH = 500;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Syncs one report:
- *   1. pull all rows from AppFolio (logged to sync_runs),
- *   2. replace raw_<report> wholesale (single transaction via RPC),
- *   3. map -> upsert into the clean table, then delete rows not seen this run.
- */
-async function syncOne(cfg: SalesReportConfig, syncedAt: string): Promise<ReportSyncOutcome> {
+// ---------------------------------------------------------------------------
+// Pull
+// ---------------------------------------------------------------------------
+
+async function pull(spec: ReportSpec, syncedAt: string, admin: SupabaseClient): Promise<{ rows: ReportRow[]; outcome: ReportOutcome }> {
   const t0 = Date.now();
-  const base = { report: cfg.report, table: cfg.table, rawRows: 0, cleanRows: 0 };
-  if (!cfg.enabled) return { ...base, status: "skipped", durationMs: 0 };
+  const params = paramsFor(spec);
+  const base = { report: spec.name, rawStored: false, dateParamsAccepted: spec.dateRange ? true : null } as const;
 
-  const admin = createSupabaseAdminClient();
+  const attempt = async (p: Record<string, unknown>) => runReport(spec.name, p);
+
   try {
-    const { rows } = await runReport(cfg.report, cfg.params);
-
-    // 2. raw table, replaced wholesale.
-    const { error: rawError } = await admin.rpc("replace_raw_rows", {
-      p_report: cfg.report,
-      p_rows: rows,
-      p_synced_at: syncedAt,
-    });
-    if (rawError) throw new Error(`replace_raw_rows(${cfg.report}): ${rawError.message}`);
-
-    // 3. clean table.
-    const seen = new Set<string>();
-    const clean: Record<string, unknown>[] = [];
-    for (const row of rows) {
-      const mapped = cfg.map(row);
-      if (!mapped || typeof mapped.id !== "string" || seen.has(mapped.id)) continue;
-      seen.add(mapped.id);
-      clean.push({ ...mapped, synced_at: syncedAt });
+    let rows: ReportRow[];
+    let pages: number;
+    let dateParamsAccepted: boolean | null = base.dateParamsAccepted;
+    try {
+      ({ rows, pages } = await attempt(params));
+    } catch (err) {
+      // If AppFolio rejects our date params (400/422), retry once without them
+      // so the sync still lands data; the outcome flags it for review.
+      const rejectedParams = spec.dateRange && err instanceof AppfolioError && (err.status === 400 || err.status === 422);
+      if (!rejectedParams) throw err;
+      console.warn(`[sync] ${spec.name}: date params rejected (HTTP ${err.status}); retrying without them`);
+      await sleep(PAUSE_BETWEEN_REPORTS_MS);
+      ({ rows, pages } = await attempt({ ...(spec.params ?? {}) }));
+      dateParamsAccepted = false;
     }
 
-    for (let i = 0; i < clean.length; i += UPSERT_BATCH) {
-      const batch = clean.slice(i, i + UPSERT_BATCH);
-      const { error } = await admin.from(cfg.table).upsert(batch, { onConflict: "id" });
-      if (error) throw new Error(`upsert ${cfg.table}: ${error.message}`);
+    let rawStored = false;
+    if (spec.storeRaw) {
+      const { error } = await admin.rpc("replace_raw_rows", { p_report: spec.name, p_rows: rows, p_synced_at: syncedAt });
+      if (error) throw new Error(`replace_raw_rows(${spec.name}): ${error.message}`);
+      rawStored = true;
     }
 
-    // Remove rows that disappeared from AppFolio (full-replace semantics).
-    const { error: delError } = await admin.from(cfg.table).delete().lt("synced_at", syncedAt);
-    if (delError) throw new Error(`prune ${cfg.table}: ${delError.message}`);
-
-    return { ...base, status: "success", rawRows: rows.length, cleanRows: clean.length, durationMs: Date.now() - t0 };
+    return {
+      rows,
+      outcome: { ...base, status: "success", rows: rows.length, pages, durationMs: Date.now() - t0, dateParamsAccepted, rawStored },
+    };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[sync] ${cfg.report} failed:`, message);
-    return { ...base, status: "error", durationMs: Date.now() - t0, error: message };
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(`[sync] ${spec.name} failed:`, error);
+    return { rows: [], outcome: { ...base, status: "error", rows: 0, pages: 0, durationMs: Date.now() - t0, error } };
   }
 }
 
-/** Runs every enabled sales report and records the result in sync_state('sales'). */
+// ---------------------------------------------------------------------------
+// Write helpers
+// ---------------------------------------------------------------------------
+
+async function upsertAll(admin: SupabaseClient, table: string, rows: Record<string, unknown>[], onConflict: string) {
+  for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
+    const { error } = await admin.from(table).upsert(rows.slice(i, i + UPSERT_BATCH), { onConflict });
+    if (error) throw new Error(`upsert ${table}: ${error.message}`);
+  }
+}
+
+/** Full-replace semantics: upsert everything seen this run, then prune older rows. */
+async function replaceTable(admin: SupabaseClient, table: TableOutcome["table"], pk: string, rows: Record<string, unknown>[], syncedAt: string): Promise<TableOutcome> {
+  try {
+    const stamped = rows.map((r) => ({ ...r, synced_at: syncedAt }));
+    await upsertAll(admin, table, stamped, pk);
+    const { error } = await admin.from(table).delete().lt("synced_at", syncedAt);
+    if (error) throw new Error(`prune ${table}: ${error.message}`);
+    return { table, status: "success", written: rows.length };
+  } catch (err) {
+    return { table, status: "error", written: 0, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * properties: never pruned, and our own flags are preserved.
+ *  - very first sync (table empty): every property is_managed = true
+ *  - later syncs: NEW properties default to is_managed = false, managed_reviewed_at = null
+ *  - existing rows: only AppFolio columns are refreshed
+ */
+async function writeProperties(admin: SupabaseClient, rows: ReportRow[], syncedAt: string): Promise<TableOutcome> {
+  try {
+    const mapped = rows.map(mapProperty).filter((p): p is NonNullable<typeof p> => p !== null);
+    const { data: existingRows, error } = await admin.from("properties").select("property_id");
+    if (error) throw new Error(`read properties: ${error.message}`);
+    const existing = new Set((existingRows ?? []).map((r) => r.property_id as number));
+    const firstSync = existing.size === 0;
+
+    const toUpdate = mapped.filter((p) => existing.has(p.property_id)).map((p) => ({ ...p, synced_at: syncedAt }));
+    const toInsert = mapped
+      .filter((p) => !existing.has(p.property_id))
+      .map((p) => ({ ...p, synced_at: syncedAt, is_managed: firstSync, managed_reviewed_at: null, first_seen_at: syncedAt }));
+
+    await upsertAll(admin, "properties", toUpdate, "property_id");
+    if (toInsert.length) {
+      const { error: insErr } = await admin.from("properties").insert(toInsert);
+      if (insErr) throw new Error(`insert properties: ${insErr.message}`);
+    }
+    return {
+      table: "properties",
+      status: "success",
+      written: mapped.length,
+      note: firstSync
+        ? `first sync: ${toInsert.length} properties marked is_managed=true (review them in /admin/properties)`
+        : `${toUpdate.length} refreshed, ${toInsert.length} new (is_managed=false, pending review)`,
+    };
+  } catch (err) {
+    return { table: "properties", status: "error", written: 0, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrator
+// ---------------------------------------------------------------------------
+
 export async function syncSales(): Promise<SalesSyncResult> {
   const admin = createSupabaseAdminClient();
-  const startedAt = new Date().toISOString();
+  const started = new Date();
+  const startedAt = started.toISOString();
 
   await admin.from("sync_state").upsert({ key: "sales", last_status: "running" }, { onConflict: "key" });
 
-  // Reports run sequentially to stay well under AppFolio rate limits.
-  const reports: ReportSyncOutcome[] = [];
-  for (const cfg of SALES_REPORTS) {
-    reports.push(await syncOne(cfg, startedAt));
+  // 1. Pull all seven reports sequentially with a pause (rate limits).
+  const pulled = new Map<SalesReportName, ReportRow[]>();
+  const reports: ReportOutcome[] = [];
+  for (const [i, spec] of SALES_REPORTS.entries()) {
+    if (i > 0) await sleep(PAUSE_BETWEEN_REPORTS_MS);
+    const { rows, outcome } = await pull(spec, startedAt, admin);
+    reports.push(outcome);
+    if (outcome.status === "success") pulled.set(spec.name, rows);
+  }
+  const ok = (name: SalesReportName) => pulled.has(name);
+
+  // 2. Write clean tables. Each depends on its source report(s) having succeeded.
+  const tables: TableOutcome[] = [];
+
+  tables.push(
+    ok("property_directory")
+      ? await writeProperties(admin, pulled.get("property_directory")!, startedAt)
+      : { table: "properties", status: "skipped", written: 0, note: "property_directory failed" },
+  );
+
+  if (ok("unit_directory") && ok("unit_vacancy") && ok("rent_roll")) {
+    const units = mergeUnits(pulled.get("unit_directory")!, pulled.get("unit_vacancy")!, pulled.get("rent_roll")!);
+    tables.push(await replaceTable(admin, "units", "unit_id", units, startedAt));
+  } else {
+    tables.push({ table: "units", status: "skipped", written: 0, note: "needs unit_directory + unit_vacancy + rent_roll" });
   }
 
-  const finishedAt = new Date().toISOString();
-  const anyError = reports.some((r) => r.status === "error");
-  const anySuccess = reports.some((r) => r.status === "success");
+  tables.push(
+    ok("guest_cards")
+      ? await replaceTable(admin, "guest_cards", "guest_card_id", mapAll(pulled.get("guest_cards")!, mapGuestCard), startedAt)
+      : { table: "guest_cards", status: "skipped", written: 0, note: "guest_cards failed" },
+  );
+  tables.push(
+    ok("showings")
+      ? await replaceTable(admin, "showings", "showing_id", mapAll(pulled.get("showings")!, mapShowing), startedAt)
+      : { table: "showings", status: "skipped", written: 0, note: "showings failed" },
+  );
+  tables.push(
+    ok("rental_applications")
+      ? await replaceTable(admin, "applications", "rental_application_id", mapAll(pulled.get("rental_applications")!, mapApplication), startedAt)
+      : { table: "applications", status: "skipped", written: 0, note: "rental_applications failed" },
+  );
+
+  // 3. Record state.
+  const finished = new Date();
+  const anyError = reports.some((r) => r.status === "error") || tables.some((t) => t.status === "error");
+  const anySuccess = tables.some((t) => t.status === "success");
   const status: SalesSyncResult["status"] = anyError ? "error" : "success";
+  const result: SalesSyncResult = {
+    startedAt,
+    finishedAt: finished.toISOString(),
+    durationMs: finished.getTime() - started.getTime(),
+    status,
+    dateRange: paramsFor(SALES_REPORTS.find((s) => s.dateRange)!) as { from_date: string; to_date: string },
+    reports,
+    tables,
+  };
 
   await admin.from("sync_state").upsert(
     {
       key: "sales",
-      // Only advance last_synced_at when at least one report actually landed.
-      ...(anySuccess ? { last_synced_at: finishedAt } : {}),
+      ...(anySuccess ? { last_synced_at: result.finishedAt } : {}),
       last_status: status,
-      detail: { startedAt, finishedAt, reports },
+      detail: result,
     },
     { onConflict: "key" },
   );
 
-  return { startedAt, finishedAt, status, reports };
+  return result;
+}
+
+function mapAll<T extends Record<string, unknown>>(rows: ReportRow[], map: (r: ReportRow) => T | null): T[] {
+  const seen = new Set<unknown>();
+  const out: T[] = [];
+  for (const row of rows) {
+    const m = map(row);
+    if (!m) continue;
+    const key = Object.values(m)[0]; // first field is the primary key in every mapper
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
+  }
+  return out;
 }

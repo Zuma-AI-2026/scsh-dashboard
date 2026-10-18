@@ -1,31 +1,27 @@
 /**
  * Leasing season math.
  *
- * SCSH leases for an August move-in. The active leasing window is
- * Nov 1 – Jul 31; Aug 1 – Oct 31 is move-in / turnover.
- *
- * `currentSeason(date)` returns the season a date belongs to, where
- * everything from Aug 1 onward counts toward the NEXT August's move-in
- * (so an early lead in September lands in the season that starts Nov 1).
- *
- * All dates are treated as America/Los_Angeles calendar dates.
+ * A season runs Nov 1 – Jul 31 and leases for the following August move-in.
+ * "Current season" = the season we are in, or (Aug–Oct) the next one starting.
+ * All calendar math is in America/Los_Angeles.
  */
 
 export type Season = {
   /** Calendar year of the August move-in this season leases for. */
   moveInYear: number;
-  /** Counting window start (Aug 1 of previous year) — leads after move-in count toward next season. */
-  countFrom: Date;
-  /** Official leasing window. */
-  leasingStart: Date; // Nov 1
-  leasingEnd: Date; // Jul 31
-  /** Where today falls. */
-  phase: "pre" | "active" | "movein";
+  /** Nov 1 00:00 LA. */
+  start: Date;
+  /** Aug 1 00:00 LA — exclusive upper bound (i.e. through Jul 31). */
+  end: Date;
+  /** "upcoming" during Aug–Oct, otherwise "active". */
+  phase: "upcoming" | "active";
+  /** e.g. "2026–27" */
+  label: string;
 };
 
 const TZ = "America/Los_Angeles";
 
-function laParts(date: Date): { year: number; month: number; day: number } {
+export function laParts(date: Date): { year: number; month: number; day: number } {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: TZ, year: "numeric", month: "numeric", day: "numeric" })
     .formatToParts(date)
     .reduce<Record<string, string>>((acc, p) => {
@@ -35,39 +31,56 @@ function laParts(date: Date): { year: number; month: number; day: number } {
   return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
 }
 
-/** Midnight (LA) on a given calendar date, as a UTC Date suitable for comparisons. */
+/** Midnight (LA) on a calendar date, as an absolute instant. */
 export function laDate(year: number, month: number, day: number): Date {
-  // Build the UTC instant for 00:00 LA. Offset is -7 or -8; compute by probing.
-  const guess = new Date(Date.UTC(year, month - 1, day, 8, 0, 0)); // 08:00Z is midnight PST
-  const p = laParts(guess);
-  if (p.day === day) return guess;
-  return new Date(Date.UTC(year, month - 1, day, 7, 0, 0)); // PDT
+  const pst = new Date(Date.UTC(year, month - 1, day, 8, 0, 0)); // 08:00Z = 00:00 PST
+  return laParts(pst).day === day ? pst : new Date(Date.UTC(year, month - 1, day, 7, 0, 0)); // PDT
 }
 
 export function currentSeason(now: Date = new Date()): Season {
   const { year, month } = laParts(now);
-  // Aug (8) or later → leasing for next year's August. Jan–Jul → this year's August.
+  // Nov–Dec: season started this year → move-in next year.
+  // Jan–Jul: season started last year → move-in this year.
+  // Aug–Oct: between seasons → the next one (starts Nov 1 this year, move-in next year).
   const moveInYear = month >= 8 ? year + 1 : year;
-  const phase: Season["phase"] = month === 8 ? "movein" : month === 9 || month === 10 ? "pre" : "active";
-
+  const phase: Season["phase"] = month >= 8 && month <= 10 ? "upcoming" : "active";
   return {
     moveInYear,
-    countFrom: laDate(moveInYear - 1, 8, 1),
-    leasingStart: laDate(moveInYear - 1, 11, 1),
-    leasingEnd: laDate(moveInYear, 8, 1), // exclusive: through Jul 31
+    start: laDate(moveInYear - 1, 11, 1),
+    end: laDate(moveInYear, 8, 1),
     phase,
+    label: `${moveInYear - 1}–${String(moveInYear).slice(2)}`,
   };
 }
 
-export function formatSeasonLabel(season: Season): string {
-  return `${season.moveInYear - 1}–${String(season.moveInYear).slice(2)}`;
-}
-
-/** Start of the current week (Monday 00:00 LA). */
-export function startOfWeek(now: Date = new Date()): Date {
+/** Monday 00:00 LA of the week containing `now`, and the following Monday (exclusive). */
+export function currentWeek(now: Date = new Date()): { start: Date; end: Date } {
   const { year, month, day } = laParts(now);
   const midnight = laDate(year, month, day);
-  const dow = new Date(midnight.getTime() + 12 * 3600_000).getUTCDay(); // 0 Sun … 6 Sat (noon avoids DST edge)
+  const dow = new Date(midnight.getTime() + 12 * 3600_000).getUTCDay(); // noon avoids DST edges
   const back = (dow + 6) % 7; // days since Monday
-  return new Date(midnight.getTime() - back * 86_400_000);
+  const start = new Date(midnight.getTime() - back * 86_400_000);
+  return { start, end: new Date(start.getTime() + 7 * 86_400_000) };
+}
+
+/** Is an ISO timestamp / YYYY-MM-DD within [start, end)? Dates are taken as LA midnight. */
+export function inRange(value: string | null | undefined, start: Date, end: Date): boolean {
+  if (!value) return false;
+  const t = toInstant(value);
+  return t !== null && t >= start.getTime() && t < end.getTime();
+}
+
+export function toInstant(value: string): number | null {
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return laDate(Number(m[1]), Number(m[2]), Number(m[3])).getTime();
+  const t = new Date(value).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Whole days between a date/timestamp and now (positive = in the past). */
+export function daysSince(value: string | null | undefined, now: Date = new Date()): number | null {
+  if (!value) return null;
+  const t = toInstant(value);
+  if (t === null) return null;
+  return Math.floor((now.getTime() - t) / 86_400_000);
 }

@@ -92,11 +92,3 @@ function laLocalToIso(y: number, m: number, d: number, hh: number, mm: number, s
   }
   return new Date(Date.UTC(y, m - 1, d, hh + 8, mm, ss)).toISOString();
 }
-
-/** Stable key for rows that lack an explicit ID (hash of selected fields). */
-export function compositeKey(...parts: Array<string | number | null | undefined>): string {
-  return parts
-    .map((p) => (p === null || p === undefined ? "" : String(p).trim().toLowerCase()))
-    .join("|")
-    .replace(/\s+/g, " ");
-}
