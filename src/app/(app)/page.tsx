@@ -1,0 +1,56 @@
+import Link from "next/link";
+import { ArrowUpRight, Lock } from "lucide-react";
+import { requireUser } from "@/lib/auth/current-user";
+import { canAccessSection, SECTIONS } from "@/lib/auth/roles";
+import { cn } from "@/lib/utils";
+
+export default async function HomePage() {
+  const user = await requireUser();
+
+  return (
+    <div>
+      <div className="mb-5">
+        <h1 className="text-lg font-semibold">Company overview</h1>
+        <p className="text-sm text-muted-foreground">Pick a department to read.</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {SECTIONS.map((section) => {
+          const allowed = canAccessSection(user.role, section);
+          const clickable = allowed && section.available;
+          const card = (
+            <div
+              className={cn(
+                "flex h-32 flex-col justify-between rounded-lg border bg-card p-4 transition-colors",
+                clickable ? "hover:border-primary/60" : "opacity-60",
+              )}
+            >
+              <div className="flex items-start justify-between">
+                <span className="font-medium">{section.label}</span>
+                {!allowed ? (
+                  <Lock className="size-4 text-muted-foreground" aria-label="No access" />
+                ) : section.available ? (
+                  <ArrowUpRight className="size-4 text-primary" />
+                ) : null}
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {!allowed
+                  ? "Your role doesn't include this section"
+                  : section.available
+                    ? "Leasing season KPIs, units, leads, showings, applications"
+                    : "Coming in a later phase"}
+              </span>
+            </div>
+          );
+          return clickable ? (
+            <Link key={section.key} href={section.href}>
+              {card}
+            </Link>
+          ) : (
+            <div key={section.key}>{card}</div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
