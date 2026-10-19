@@ -165,14 +165,18 @@ export async function fetchReport(
     Accept: "application/json",
   };
   // paginate_results is what makes AppFolio return next_page_url.
-  const body = JSON.stringify({ paginate_results: true, ...params });
+  const firstBody = JSON.stringify({ paginate_results: true, ...params });
 
   const rows: ReportRow[] = [];
+  const origin = `https://${creds.db}.appfolio.com`;
   let url: string | null = reportUrl(creds.db, reportName);
   let pages = 0;
   let firstStatus = 0;
 
   while (url && pages < maxPages) {
+    // Per AppFolio docs: next_page_url points at an existing report run; it must be
+    // POSTed WITHOUT filters (they're rejected), and it may be a relative path.
+    const body = pages === 0 ? firstBody : "{}";
     const res: Response = await requestWithRetry(url, { method: "POST", headers, body }, reportName, opts);
     if (pages === 0) firstStatus = res.status;
 
@@ -184,7 +188,8 @@ export async function fetchReport(
     const json: unknown = await res.json();
     rows.push(...extractRows(json));
     pages += 1;
-    url = extractNext(json);
+    const next = extractNext(json);
+    url = next ? new URL(next, origin).toString() : null;
     opts.log?.(`${reportName}: page ${pages}, ${rows.length} rows so far${url ? ", more…" : ""}`);
   }
 

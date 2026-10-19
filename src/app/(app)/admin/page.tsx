@@ -61,7 +61,7 @@ export default async function AdminPage() {
         <section className="grid gap-4 lg:grid-cols-2">
           <div>
             <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Last run · reports {last.dateRange && <span className="normal-case tracking-normal">({last.dateRange.from_date} → {last.dateRange.to_date})</span>}
+              Last run · reports <span className="normal-case tracking-normal">(date range {last.dateRange.from} → {last.dateRange.to})</span>
             </h2>
             <div className="rounded-md border bg-card">
               <Table className="text-[13px]">
@@ -70,7 +70,7 @@ export default async function AdminPage() {
                     <TableHead className="h-8 text-[11px] uppercase">Report</TableHead>
                     <TableHead className="h-8 text-right text-[11px] uppercase">Rows</TableHead>
                     <TableHead className="h-8 text-right text-[11px] uppercase">Pages</TableHead>
-                    <TableHead className="h-8 text-[11px] uppercase">Dates</TableHead>
+                    <TableHead className="h-8 text-[11px] uppercase">Filters sent</TableHead>
                     <TableHead className="h-8 text-[11px] uppercase">Raw</TableHead>
                     <TableHead className="h-8 text-[11px] uppercase">Status</TableHead>
                   </TableRow>
@@ -82,7 +82,7 @@ export default async function AdminPage() {
                       <TableCell className="tabular py-1.5 text-right">{r.rows}</TableCell>
                       <TableCell className="tabular py-1.5 text-right text-muted-foreground">{r.pages}</TableCell>
                       <TableCell className="py-1.5 text-xs">
-                        {r.dateParamsAccepted === null ? <span className="text-muted-foreground">n/a</span> : r.dateParamsAccepted ? <span className="text-positive">sent</span> : <span className="text-negative">rejected → ran without</span>}
+                        <FiltersSent params={r.params} />
                       </TableCell>
                       <TableCell className="py-1.5 text-xs text-muted-foreground">{r.rawStored ? "stored" : "skipped"}</TableCell>
                       <TableCell className="py-1.5">
@@ -163,4 +163,23 @@ export default async function AdminPage() {
       </section>
     </div>
   );
+}
+
+/** Compact rendering of the request body, e.g. "received_on 2025-08-01→2026-10-18 · guest_card_statuses=all". */
+function FiltersSent({ params }: { params: Record<string, unknown> | undefined }) {
+  const entries = Object.entries(params ?? {});
+  if (entries.length === 0) return <span className="text-muted-foreground">none (report defaults)</span>;
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  for (const [k, v] of entries) {
+    if (seen.has(k)) continue;
+    const m = k.match(/^(.*)_from$/);
+    if (m && `${m[1]}_to` in (params ?? {})) {
+      parts.push(`${m[1]} ${String(v)}→${String(params![`${m[1]}_to`])}`);
+      seen.add(`${m[1]}_to`);
+    } else {
+      parts.push(`${k}=${Array.isArray(v) ? v.join(",") : String(v)}`);
+    }
+  }
+  return <span className="font-mono text-[11px] text-muted-foreground">{parts.join(" · ")}</span>;
 }

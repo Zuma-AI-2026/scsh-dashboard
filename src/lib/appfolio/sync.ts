@@ -7,7 +7,7 @@ import { mapGuestCard } from "./mappers/guest-cards";
 import { mapProperty } from "./mappers/properties";
 import { mapShowing } from "./mappers/showings";
 import { mergeUnits } from "./mappers/units";
-import { PAUSE_BETWEEN_REPORTS_MS, paramsFor, SALES_REPORTS, type ReportSpec, type SalesReportName } from "./reports";
+import { PAUSE_BETWEEN_REPORTS_MS, paramsFor, SALES_REPORTS, salesDateRange, type ReportSpec, type SalesReportName } from "./reports";
 import { runReport } from "./runReport";
 
 export type ReportOutcome = {
@@ -16,8 +16,8 @@ export type ReportOutcome = {
   rows: number;
   pages: number;
   durationMs: number;
-  /** False when AppFolio rejected from/to and we re-ran without them. */
-  dateParamsAccepted: boolean | null;
+  /** Exactly what was sent in the request body (AppFolio ignores unknown keys silently). */
+  params: Record<string, unknown>;
   rawStored: boolean;
   error?: string;
 };
@@ -35,7 +35,7 @@ export type SalesSyncResult = {
   finishedAt: string;
   durationMs: number;
   status: "success" | "error";
-  dateRange: { from_date: string; to_date: string } | null;
+  dateRange: { from: string; to: string };
   reports: ReportOutcome[];
   tables: TableOutcome[];
 };
@@ -50,26 +50,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function pull(spec: ReportSpec, syncedAt: string, admin: SupabaseClient): Promise<{ rows: ReportRow[]; outcome: ReportOutcome }> {
   const t0 = Date.now();
   const params = paramsFor(spec);
-  const base = { report: spec.name, rawStored: false, dateParamsAccepted: spec.dateRange ? true : null } as const;
-
-  const attempt = async (p: Record<string, unknown>) => runReport(spec.name, p);
+  const base = { report: spec.name, params, rawStored: false } as const;
 
   try {
-    let rows: ReportRow[];
-    let pages: number;
-    let dateParamsAccepted: boolean | null = base.dateParamsAccepted;
-    try {
-      ({ rows, pages } = await attempt(params));
-    } catch (err) {
-      // If AppFolio rejects our date params (400/422), retry once without them
-      // so the sync still lands data; the outcome flags it for review.
-      const rejectedParams = spec.dateRange && err instanceof AppfolioError && (err.status === 400 || err.status === 422);
-      if (!rejectedParams) throw err;
-      console.warn(`[sync] ${spec.name}: date params rejected (HTTP ${err.status}); retrying without them`);
-      await sleep(PAUSE_BETWEEN_REPORTS_MS);
-      ({ rows, pages } = await attempt({ ...(spec.params ?? {}) }));
-      dateParamsAccepted = false;
-    }
+    const { rows, pages } = await runReport(spec.name, params);
 
     let rawStored = false;
     if (spec.storeRaw) {
@@ -78,12 +62,9 @@ async function pull(spec: ReportSpec, syncedAt: string, admin: SupabaseClient): 
       rawStored = true;
     }
 
-    return {
-      rows,
-      outcome: { ...base, status: "success", rows: rows.length, pages, durationMs: Date.now() - t0, dateParamsAccepted, rawStored },
-    };
+    return { rows, outcome: { ...base, status: "success", rows: rows.length, pages, durationMs: Date.now() - t0, rawStored } };
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+    const error = err instanceof AppfolioError ? `HTTP ${err.status}: ${err.body.slice(0, 300)}` : err instanceof Error ? err.message : String(err);
     console.error(`[sync] ${spec.name} failed:`, error);
     return { rows: [], outcome: { ...base, status: "error", rows: 0, pages: 0, durationMs: Date.now() - t0, error } };
   }
@@ -214,7 +195,7 @@ export async function syncSales(): Promise<SalesSyncResult> {
     finishedAt: finished.toISOString(),
     durationMs: finished.getTime() - started.getTime(),
     status,
-    dateRange: paramsFor(SALES_REPORTS.find((s) => s.dateRange)!) as { from_date: string; to_date: string },
+    dateRange: salesDateRange(),
     reports,
     tables,
   };
