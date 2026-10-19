@@ -35,8 +35,13 @@ export function AppHeader({ user, sync }: { user: CurrentUser; sync: SyncState |
             <span className="max-w-[180px] truncate text-xs text-muted-foreground" title={user.email}>
               {user.displayName}
             </span>
-            <Badge variant="outline" className="font-mono text-[10px] uppercase">
+            <Badge
+              variant="outline"
+              className={user.provisionError ? "border-negative/50 font-mono text-[10px] text-negative uppercase" : "font-mono text-[10px] uppercase"}
+              title={user.provisionError ? `Account setup failed: ${user.provisionError}` : undefined}
+            >
               {user.role}
+              {user.provisionError && " · setup failed"}
             </Badge>
           </div>
           <form action="/auth/signout" method="post">
