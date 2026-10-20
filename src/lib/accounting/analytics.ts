@@ -3,7 +3,7 @@ import { formatMoney } from "@/lib/format";
 import type { Kpi } from "@/lib/sales/analytics";
 import { hrefWith } from "@/lib/url";
 import type { AccountingDataset } from "./data";
-import { currentStageOf, isActionOverdue, nextActionDueOf, OWNER_TYPE_LABEL, type DelinquencyStage } from "./ladder";
+import { currentStageOf, isActionOverdue, nextActionDueOf, OVERDUE_GRACE_DAYS, OWNER_TYPE_LABEL, type DelinquencyStage } from "./ladder";
 import type { Delinquency, DelinquencyAction, TenantContact } from "./types";
 
 export type Params = Record<string, string | undefined>;
@@ -117,7 +117,7 @@ export function computeKpis(rows: DelinquencyView[], occupiedManaged: number, st
       key: "actions-overdue",
       label: "Actions overdue",
       value: String(overdueN),
-      sub: overdueN ? "next step's day has passed" : "all due steps logged",
+      sub: overdueN ? `current stage unlogged > ${OVERDUE_GRACE_DAYS} days` : "no current stage overdue",
       href: hrefWith(path, {}, { overdue: "1", kpi: "actions-overdue" }),
       tone: overdueN ? "negative" : "positive",
     },
@@ -125,14 +125,16 @@ export function computeKpis(rows: DelinquencyView[], occupiedManaged: number, st
       .filter((s) => s.is_active)
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((s) => {
-        const n = rows.filter((r) => r.current_stage?.id === s.id).length;
+        const inStage = rows.filter((r) => r.current_stage?.id === s.id);
+        const open = inStage.filter((r) => r.next_action_due?.id === s.id).length;
+        const late = inStage.filter((r) => r.action_overdue).length;
         return {
           key: `stage-${s.id}`,
           label: s.name,
-          value: String(n),
-          sub: `day ${s.trigger_day} · ${OWNER_TYPE_LABEL[s.owner_type]}`,
+          value: String(inStage.length),
+          sub: `day ${s.trigger_day} · ${OWNER_TYPE_LABEL[s.owner_type]} · ${open} open${late ? `, ${late} overdue` : ""}`,
           href: hrefWith(path, {}, { stage: String(s.id), kpi: `stage-${s.id}` }),
-          tone: n ? ("negative" as const) : ("neutral" as const),
+          tone: late ? ("negative" as const) : ("neutral" as const),
         };
       }),
   ];

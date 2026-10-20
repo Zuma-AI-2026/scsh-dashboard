@@ -2,6 +2,7 @@ import { FollowUpCell, LastActionCell } from "@/components/accounting/follow-up"
 import { DataTable, type Column } from "@/components/sales/data-table";
 import type { DelinquencyView } from "@/lib/accounting/analytics";
 import { OWNER_TYPE_LABEL, type DelinquencyStage } from "@/lib/accounting/ladder";
+import { BULK_FORM_ID } from "@/lib/accounting/types";
 import { formatDate, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -11,14 +12,29 @@ export function DelinquencyTable({
   canWrite,
   showContacts,
   stages,
+  bulkSelect = false,
 }: {
   rows: DelinquencyView[];
   params: Record<string, string | undefined>;
   canWrite: boolean;
   showContacts: boolean;
   stages: DelinquencyStage[];
+  bulkSelect?: boolean;
 }) {
-  const columns: Column<DelinquencyView>[] = [
+  const columns: Column<DelinquencyView>[] = [];
+  if (bulkSelect) {
+    columns.push({
+      key: "select",
+      label: "",
+      sortable: false,
+      className: "w-8",
+      render: (r) =>
+        r.next_action_due ? (
+          <input type="checkbox" name="occupancy_id" value={r.occupancy_id} form={BULK_FORM_ID} aria-label={`Select ${r.tenant ?? r.occupancy_id}`} className="size-3.5 accent-primary" />
+        ) : null,
+    });
+  }
+  columns.push(
     { key: "property_name", label: "Property", sortable: true, render: (r) => r.property_name ?? "—" },
     { key: "unit_name", label: "Unit", sortable: true, render: (r) => r.unit_name ?? "—" },
     {
@@ -87,7 +103,7 @@ export function DelinquencyTable({
     },
     { key: "nsf", label: "NSF", sortable: true, align: "right", render: (r) => (r.nsf == null ? "—" : String(r.nsf)) },
     { key: "lease_to", label: "Lease end", sortable: true, render: (r) => formatDate(r.lease_to) },
-  ];
+  );
 
   if (canWrite) {
     columns.push({

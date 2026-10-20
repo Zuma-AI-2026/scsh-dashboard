@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BulkMarkDoneBar } from "@/components/accounting/bulk-mark-done";
 import { HistoryPanel } from "@/components/accounting/follow-up";
 import { DelinquencyTable } from "@/components/accounting/table";
 import { NoAccess } from "@/components/app-shell/section-page";
@@ -24,6 +25,7 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
   const filtered = sortDelinquencies(filterRows(derived, params), params);
   const canWrite = canWriteFollowUp(user.role);
   const showContacts = canSeeTenantContacts(user.role);
+  const isAdmin = user.role === "admin";
 
   const historyId = params.history ? Number(params.history) : NaN;
   const historyRow = Number.isInteger(historyId) ? derived.find((r) => r.occupancy_id === historyId) : undefined;
@@ -72,7 +74,9 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
         />
       )}
 
-      <DelinquencyTable rows={filtered} params={params} canWrite={canWrite} showContacts={showContacts} stages={data.stages} />
+      {isAdmin && <BulkMarkDoneBar eligible={filtered.filter((r) => r.next_action_due).length} />}
+
+      <DelinquencyTable rows={filtered} params={params} canWrite={canWrite} showContacts={showContacts} stages={data.stages} bulkSelect={isAdmin} />
     </div>
   );
 }

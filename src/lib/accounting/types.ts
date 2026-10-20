@@ -34,3 +34,6 @@ export function isFollowUpAction(value: unknown): value is FollowUpAction {
 }
 
 export const OCCUPIED_STATUSES = ["current", "notice", "evict"];
+
+/** DOM id of the admin bulk form; row checkboxes attach to it via the `form` attribute. */
+export const BULK_FORM_ID = "bulk-mark-done";

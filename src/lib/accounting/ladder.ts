@@ -46,19 +46,23 @@ export function currentStageOf(stages: DelinquencyStage[], daysPastDue: number |
   return current;
 }
 
+/** Days after a stage triggers before its missing action counts as overdue. */
+export const OVERDUE_GRACE_DAYS = 2;
+
 /**
- * First stage at or below current_stage that has no logged action with that
- * stage_id. Null when nothing has triggered yet, or every due stage is logged.
+ * The current stage if it has no logged action; otherwise null. Earlier
+ * stages without a log are treated as skipped, not due.
  */
 export function nextActionDueOf(stages: DelinquencyStage[], daysPastDue: number | null, fulfilledStageIds: Set<number>): DelinquencyStage | null {
   const current = currentStageOf(stages, daysPastDue);
-  if (!current) return null;
-  return activeStages(stages).filter((s) => s.trigger_day <= current.trigger_day).find((s) => !fulfilledStageIds.has(s.id)) ?? null;
+  if (!current || fulfilledStageIds.has(current.id)) return null;
+  return current;
 }
 
+/** next_action_due is the current stage and more than OVERDUE_GRACE_DAYS have passed since it triggered. */
 export function isActionOverdue(next: DelinquencyStage | null, daysPastDue: number | null): boolean {
   if (!next || daysPastDue === null) return false;
-  return next.trigger_day <= daysPastDue;
+  return daysPastDue > next.trigger_day + OVERDUE_GRACE_DAYS;
 }
 
 /** When ordered by sort_order, each trigger_day must be greater than the previous. */
