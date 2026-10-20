@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth/current-user";
 import { formatDate } from "@/lib/format";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
-import { setPropertyManaged } from "../actions";
+import { confirmAllPendingProperties, confirmPropertyReviewed, setPropertyManaged } from "../actions";
 
 export const metadata: Metadata = { title: "Properties · Admin" };
 
@@ -50,14 +50,23 @@ export default async function AdminPropertiesPage() {
           </div>
           <h1 className="text-lg font-semibold">Properties</h1>
           <p className="text-sm text-muted-foreground">
-            Everything in the dashboard is filtered to properties marked <span className="text-foreground">Managed</span>. Turn off anything that isn&apos;t SCSH.
+            Everything in the dashboard is filtered to properties marked <span className="text-foreground">Managed</span>. Turn off anything that isn&apos;t SCSH, then confirm the rest.
           </p>
         </div>
-        <div className="flex gap-4 text-sm">
-          <Stat label="Properties" value={rows.length} />
-          <Stat label="Managed" value={managed.length} tone="positive" />
-          <Stat label="Managed units" value={managedUnits} />
-          <Stat label="To review" value={toReview} tone={toReview ? "warning" : undefined} />
+        <div className="flex flex-wrap items-end gap-4">
+          {toReview > 0 && (
+            <form action={confirmAllPendingProperties}>
+              <PendingButton variant="outline" size="sm" pendingLabel="Confirming…">
+                Confirm all remaining ({toReview})
+              </PendingButton>
+            </form>
+          )}
+          <div className="flex gap-4 text-sm">
+            <Stat label="Properties" value={rows.length} />
+            <Stat label="Managed" value={managed.length} tone="positive" />
+            <Stat label="Managed units" value={managedUnits} />
+            <Stat label="To review" value={toReview} tone={toReview ? "warning" : undefined} />
+          </div>
         </div>
       </div>
 
@@ -97,20 +106,31 @@ export default async function AdminPropertiesPage() {
                   <TableCell className="py-1.5 whitespace-nowrap">{p.portfolio ?? "—"}</TableCell>
                   <TableCell className="py-1.5 whitespace-nowrap">{formatDate(p.first_seen_at)}</TableCell>
                   <TableCell className="py-1.5">
-                    <form action={setPropertyManaged} className="flex items-center gap-2">
-                      <input type="hidden" name="property_id" value={p.property_id} />
-                      <input type="hidden" name="is_managed" value={p.is_managed ? "false" : "true"} />
-                      <PendingButton
-                        variant="outline"
-                        size="xs"
-                        role="switch"
-                        aria-checked={p.is_managed}
-                        className={cn("w-16 justify-center font-mono text-[11px]", p.is_managed ? "border-positive/50 bg-positive/10 text-positive hover:bg-positive/20" : "text-muted-foreground")}
-                      >
-                        {p.is_managed ? "ON" : "OFF"}
-                      </PendingButton>
-                      {p.managed_reviewed_at && <span className="text-[11px] text-muted-foreground">reviewed {formatDate(p.managed_reviewed_at)}</span>}
-                    </form>
+                    <div className="flex items-center gap-2">
+                      <form action={setPropertyManaged}>
+                        <input type="hidden" name="property_id" value={p.property_id} />
+                        <input type="hidden" name="is_managed" value={p.is_managed ? "false" : "true"} />
+                        <PendingButton
+                          variant="outline"
+                          size="xs"
+                          role="switch"
+                          aria-checked={p.is_managed}
+                          className={cn("w-16 justify-center font-mono text-[11px]", p.is_managed ? "border-positive/50 bg-positive/10 text-positive hover:bg-positive/20" : "text-muted-foreground")}
+                        >
+                          {p.is_managed ? "ON" : "OFF"}
+                        </PendingButton>
+                      </form>
+                      {!p.managed_reviewed_at ? (
+                        <form action={confirmPropertyReviewed}>
+                          <input type="hidden" name="property_id" value={p.property_id} />
+                          <PendingButton variant="ghost" size="xs" pendingLabel="…">
+                            Confirm
+                          </PendingButton>
+                        </form>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">reviewed {formatDate(p.managed_reviewed_at)}</span>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

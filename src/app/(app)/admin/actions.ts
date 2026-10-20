@@ -35,3 +35,32 @@ export async function setPropertyManaged(formData: FormData): Promise<void> {
 
   revalidatePath("/", "layout");
 }
+
+/** Mark one property reviewed without changing is_managed. */
+export async function confirmPropertyReviewed(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const propertyId = Number(formData.get("property_id"));
+  if (!Number.isInteger(propertyId)) throw new Error("Invalid property id.");
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("properties")
+    .update({ managed_reviewed_at: new Date().toISOString() })
+    .eq("property_id", propertyId);
+  if (error) throw new Error(`Could not confirm property: ${error.message}`);
+
+  revalidatePath("/", "layout");
+}
+
+/** Mark every still-pending property as reviewed, leaving is_managed as-is. */
+export async function confirmAllPendingProperties(): Promise<void> {
+  await requireAdmin();
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("properties")
+    .update({ managed_reviewed_at: new Date().toISOString() })
+    .is("managed_reviewed_at", null);
+  if (error) throw new Error(`Could not confirm pending properties: ${error.message}`);
+
+  revalidatePath("/", "layout");
+}
