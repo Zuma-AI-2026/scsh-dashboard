@@ -1,6 +1,19 @@
 import { currentSeason, currentWeek, daysSince, inRange, toInstant, type Season } from "@/lib/season";
 import type { SalesDataset } from "./data";
-import { CANCELLED_SHOWING_STATUSES, CLOSED_LEAD_STATUSES, STALE_LEAD_HOURS, type Application, type GuestCard, type Showing, type Unit } from "./types";
+import {
+  CANCELLED_SHOWING_STATUSES,
+  CLOSED_LEAD_STATUSES,
+  COMPLETED_SHOWING_STATUSES,
+  LEASE_SIGNED_STATUS,
+  OPEN_LEAD_STATUS,
+  STALE_LEAD_HOURS,
+  UPCOMING_SHOWING_STATUS,
+  type Application,
+  type GuestCard,
+  type GuestCardInterest,
+  type Showing,
+  type Unit,
+} from "./types";
 
 /** Pure functions over the loaded dataset. No I/O so they're easy to reason about and test. */
 
@@ -21,27 +34,30 @@ export type Kpi = {
 
 const lower = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 
+/** Canceled, Prospect Canceled, No Show. */
 export function isCancelledShowing(s: Showing): boolean {
   return CANCELLED_SHOWING_STATUSES.includes(lower(s.status));
 }
+/** Completed or Completed (Unconfirmed). */
 export function isCompletedShowing(s: Showing): boolean {
-  return lower(s.status) === "completed";
+  return COMPLETED_SHOWING_STATUSES.includes(lower(s.status));
 }
-export function isUpcomingShowing(s: Showing, now: Date): boolean {
-  if (!s.showing_time || isCancelledShowing(s) || isCompletedShowing(s)) return false;
-  const t = toInstant(s.showing_time);
-  return t !== null && t >= now.getTime();
+/** Status = Scheduled. */
+export function isUpcomingShowing(s: Showing): boolean {
+  return lower(s.status) === UPCOMING_SHOWING_STATUS;
 }
+/** Status = Converted. */
 export function isLeaseSigned(a: Application): boolean {
-  return lower(a.status) === "converted";
+  return lower(a.status) === LEASE_SIGNED_STATUS;
 }
 /** The moment the lease was effectively signed (for season bucketing). */
 export function leaseSignedAt(a: Application): string | null {
   return a.approved_at ?? a.decision_made_at ?? a.received;
 }
-/** Stale = open status and no activity for 48h+. */
+/** Stale = status Active and no activity for 48h+. Closed statuses are never stale. */
 export function isStaleLead(g: GuestCard, now: Date): boolean {
-  if (CLOSED_LEAD_STATUSES.includes(lower(g.status))) return false;
+  const status = lower(g.status);
+  if (status !== OPEN_LEAD_STATUS || CLOSED_LEAD_STATUSES.includes(status)) return false;
   const last = g.last_activity_date ?? g.received;
   if (!last) return true;
   const t = toInstant(last);
@@ -75,7 +91,7 @@ export function computeKpis(data: SalesDataset, now = new Date()): { season: Sea
   const avgDom = dom.length ? Math.round(dom.reduce((a, b) => a + b, 0) / dom.length) : null;
   const staleLeads = data.leads.filter((g) => isStaleLead(g, now)).length;
 
-  const seasonSub = season.phase === "upcoming" ? `season ${season.label} · starts Nov 1` : `season ${season.label}`;
+  const seasonSub = `season ${season.label}`;
 
   const kpis: Kpi[] = [
     { key: "available", label: "Available units", value: String(data.availableUnits.length), href: "/sales?tab=units", tone: data.availableUnits.length ? "neutral" : "positive" },
@@ -113,16 +129,41 @@ export function filterUnits(units: Unit[], p: Params): Unit[] {
   return units.filter((u) => eq(u.property_name, p.property));
 }
 
-export function filterLeads(leads: GuestCard[], p: Params, range: Range | null, now: Date): GuestCard[] {
+export function filterLeads(
+  leads: GuestCard[],
+  interests: GuestCardInterest[],
+  p: Params,
+  range: Range | null,
+  now: Date,
+): GuestCard[] {
+  const idsOnProperty = p.property
+    ? new Set(interests.filter((i) => eq(i.property_name, p.property)).map((i) => i.guest_card_id))
+    : null;
   return leads.filter(
     (g) =>
       eq(g.assigned_user, p.agent) &&
       eq(g.source, p.source) &&
       eq(g.status, p.status) &&
-      eq(g.property_name, p.property) &&
+      (idsOnProperty === null || idsOnProperty.has(g.guest_card_id)) &&
       (!range || inRange(g.received, range.start, range.end)) &&
       (p.stale !== "1" || isStaleLead(g, now)),
   );
+}
+
+/** Managed properties a lead has an interest in, earliest interest first. */
+export function managedPropertiesFor(guestCardId: number, interests: GuestCardInterest[]): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const mine = interests
+    .filter((i) => i.guest_card_id === guestCardId && i.property_name)
+    .sort((a, b) => (a.received ?? "").localeCompare(b.received ?? ""));
+  for (const i of mine) {
+    const name = i.property_name!;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
 }
 
 export function filterShowings(showings: Showing[], p: Params, range: Range | null): Showing[] {

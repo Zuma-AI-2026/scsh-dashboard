@@ -10,6 +10,7 @@ import {
   filterUnits,
   isStaleLead,
   isUpcomingShowing,
+  managedPropertiesFor,
   pct,
   rangeFromParams,
   sortRows,
@@ -72,7 +73,7 @@ export function UnitsTab({ data, params }: TabProps) {
 // ---------------------------------------------------------------------------
 export function LeadsTab({ data, params, season, week, now }: TabProps) {
   const range = rangeFromParams(params, season, week);
-  const rows = sortRows(filterLeads(data.leads, params, range, now), params.sort, params.dir ?? "desc", "received");
+  const rows = sortRows(filterLeads(data.leads, data.leadInterests, params, range, now), params.sort, params.dir ?? "desc", "received");
   const stale = rows.filter((g) => isStaleLead(g, now)).length;
 
   const columns: Column<GuestCard>[] = [
@@ -87,7 +88,21 @@ export function LeadsTab({ data, params, season, week, now }: TabProps) {
         </div>
       ),
     },
-    { key: "property_name", label: "Interest", sortable: true, render: (g) => <span>{text(g.property_name)}{g.unit && <span className={dim}> · {g.unit}</span>}</span> },
+    {
+      key: "property_name",
+      label: "Interest",
+      sortable: true,
+      render: (g) => {
+        const names = managedPropertiesFor(g.guest_card_id, data.leadInterests);
+        if (names.length === 0) return text(g.property_name);
+        return (
+          <span>
+            {names[0]}
+            {names.length > 1 && <span className={dim}> · +{names.length - 1} more</span>}
+          </span>
+        );
+      },
+    },
     { key: "source", label: "Source", sortable: true, render: (g) => text(g.source) },
     { key: "assigned_user", label: "Agent", sortable: true, render: (g) => text(g.assigned_user) },
     { key: "status", label: "Status", sortable: true, render: (g) => <StatusBadge value={g.status} /> },
@@ -104,7 +119,7 @@ export function LeadsTab({ data, params, season, week, now }: TabProps) {
             { kind: "select", name: "agent", label: "Agent", options: distinct(data.leads, (g) => g.assigned_user) },
             { kind: "select", name: "source", label: "Source", options: distinct(data.leads, (g) => g.source) },
             { kind: "select", name: "status", label: "Status", options: distinct(data.leads, (g) => g.status) },
-            { kind: "select", name: "property", label: "Property", options: distinct(data.leads, (g) => g.property_name) },
+            { kind: "select", name: "property", label: "Property", options: distinct(data.leadInterests, (i) => i.property_name) },
             { kind: "date", name: "from", label: "From" },
             { kind: "date", name: "to", label: "To" },
             { kind: "toggle", name: "stale", label: "Stale only" },
@@ -125,11 +140,11 @@ export function LeadsTab({ data, params, season, week, now }: TabProps) {
 // ---------------------------------------------------------------------------
 // 3. Showings
 // ---------------------------------------------------------------------------
-export function ShowingsTab({ data, params, season, week, now }: TabProps) {
+export function ShowingsTab({ data, params, season, week }: TabProps) {
   const range = rangeFromParams(params, season, week);
   const filtered = filterShowings(data.showings, params, range);
-  const upcoming = sortRows(filtered.filter((s) => isUpcomingShowing(s, now)), "showing_time", "asc", "showing_time");
-  const past = sortRows(filtered.filter((s) => !isUpcomingShowing(s, now)), params.sort, params.dir ?? "desc", "showing_time");
+  const upcoming = sortRows(filtered.filter(isUpcomingShowing), "showing_time", "asc", "showing_time");
+  const past = sortRows(filtered.filter((s) => !isUpcomingShowing(s)), params.sort, params.dir ?? "desc", "showing_time");
 
   const columns: Column<Showing>[] = [
     { key: "showing_time", label: "When", sortable: true, render: (s) => formatDateTime(s.showing_time) },
@@ -155,7 +170,7 @@ export function ShowingsTab({ data, params, season, week, now }: TabProps) {
         <RangeNote params={params} season={season} week={week} />
       </div>
       <div className="space-y-2">
-        <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Upcoming · {upcoming.length}</h3>
+        <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Upcoming (Scheduled) · {upcoming.length}</h3>
         <DataTable columns={columns} rows={upcoming} rowKey={(s) => s.showing_id} params={params} empty="No upcoming showings." />
       </div>
       <div className="space-y-2">
@@ -226,7 +241,6 @@ export function PipelineTab({ data, season }: TabProps) {
           <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Season {season.label} funnel</h3>
           <span className={cn("text-xs", dim)}>
             {formatDate(season.start.toISOString())} – {formatDate(new Date(season.end.getTime() - 1).toISOString())}
-            {season.phase === "upcoming" && " · not started yet"}
           </span>
         </div>
         <div className="space-y-1.5 rounded-md border bg-card p-3">
@@ -263,7 +277,7 @@ export function PipelineTab({ data, season }: TabProps) {
           rows={byAgent}
           rowKey={(r) => r.agent}
           params={{}}
-          empty={season.phase === "upcoming" ? "The season hasn't started yet (Nov 1)." : "No activity this season."}
+          empty="No activity this season."
         />
       </div>
     </section>

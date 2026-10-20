@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { AppfolioError, type ReportRow } from "./client";
 import { mapApplication } from "./mappers/applications";
-import { mapGuestCard } from "./mappers/guest-cards";
+import { mapGuestCards } from "./mappers/guest-cards";
 import { mapProperty } from "./mappers/properties";
 import { mapShowing } from "./mappers/showings";
 import { mergeUnits } from "./mappers/units";
@@ -23,7 +23,7 @@ export type ReportOutcome = {
 };
 
 export type TableOutcome = {
-  table: "properties" | "units" | "guest_cards" | "showings" | "applications";
+  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications";
   status: "success" | "error" | "skipped";
   written: number;
   note?: string;
@@ -169,11 +169,12 @@ export async function syncSales(): Promise<SalesSyncResult> {
     tables.push({ table: "units", status: "skipped", written: 0, note: "needs unit_directory + unit_vacancy + rent_roll" });
   }
 
-  tables.push(
-    ok("guest_cards")
-      ? await replaceTable(admin, "guest_cards", "guest_card_id", mapAll(pulled.get("guest_cards")!, mapGuestCard), startedAt)
-      : { table: "guest_cards", status: "skipped", written: 0, note: "guest_cards failed" },
-  );
+  if (ok("guest_cards")) {
+    tables.push(...(await writeGuestCards(admin, pulled.get("guest_cards")!, startedAt)));
+  } else {
+    tables.push({ table: "guest_cards", status: "skipped", written: 0, note: "guest_cards failed" });
+    tables.push({ table: "guest_card_interests", status: "skipped", written: 0, note: "guest_cards failed" });
+  }
   tables.push(
     ok("showings")
       ? await replaceTable(admin, "showings", "showing_id", mapAll(pulled.get("showings")!, mapShowing), startedAt)
@@ -211,6 +212,25 @@ export async function syncSales(): Promise<SalesSyncResult> {
   );
 
   return result;
+}
+
+async function writeGuestCards(admin: SupabaseClient, rows: ReportRow[], syncedAt: string): Promise<TableOutcome[]> {
+  const { people, interests } = mapGuestCards(rows);
+  const peopleOut = await replaceTable(admin, "guest_cards", "guest_card_id", people as Record<string, unknown>[], syncedAt);
+  const interestsOut = await replaceTable(
+    admin,
+    "guest_card_interests",
+    "guest_card_id,property_id,received,row_index",
+    interests as Record<string, unknown>[],
+    syncedAt,
+  );
+  if (peopleOut.status === "success") {
+    peopleOut.note = `${people.length} people from ${rows.length} AppFolio rows`;
+  }
+  if (interestsOut.status === "success") {
+    interestsOut.note = `${interests.length} interests (nothing dropped)`;
+  }
+  return [peopleOut, interestsOut];
 }
 
 function mapAll<T extends Record<string, unknown>>(rows: ReportRow[], map: (r: ReportRow) => T | null): T[] {
