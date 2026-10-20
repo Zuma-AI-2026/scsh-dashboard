@@ -1,13 +1,65 @@
 import type { Metadata } from "next";
-import { ComingSoon, NoAccess } from "@/components/app-shell/section-page";
+import { HistoryPanel } from "@/components/accounting/follow-up";
+import { DelinquencyTable } from "@/components/accounting/table";
+import { NoAccess } from "@/components/app-shell/section-page";
+import { FilterBar } from "@/components/sales/filter-bar";
+import { KpiStrip } from "@/components/sales/kpi-strip";
+import { activeKpi, computeKpis, distinct, filterRows, historyFor, sortRows, withDerived } from "@/lib/accounting/analytics";
+import { loadAccountingDataset } from "@/lib/accounting/data";
 import { requireSection } from "@/lib/auth/current-user";
-import { sectionByKey } from "@/lib/auth/roles";
+import { canWriteFollowUp, sectionByKey } from "@/lib/auth/roles";
+import { hrefWith, flattenParams } from "@/lib/url";
 
 export const metadata: Metadata = { title: "Accounting" };
 
-export default async function AccountingPage() {
+export default async function AccountingPage({ searchParams }: PageProps<"/accounting">) {
   const section = sectionByKey("accounting");
   const { user, allowed } = await requireSection(section);
   if (!allowed) return <NoAccess section={section} user={user} />;
-  return <ComingSoon section={section} />;
+
+  const params = flattenParams(await searchParams);
+  const data = await loadAccountingDataset();
+  const derived = withDerived(data);
+  const kpis = computeKpis(derived, data.occupiedManaged);
+  const filtered = sortRows(filterRows(derived, params), params.sort, params.dir ?? "desc", "amount_receivable");
+  const canWrite = canWriteFollowUp(user.role);
+
+  const historyId = params.history ? Number(params.history) : NaN;
+  const historyRow = Number.isInteger(historyId) ? derived.find((r) => r.occupancy_id === historyId) : undefined;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h1 className="text-lg font-semibold">Accounting</h1>
+        <span className="text-xs text-muted-foreground">
+          Delinquency on managed properties · AppFolio is read-only
+          {canWrite ? " · you can log follow-up" : " · follow-up is read-only"}
+        </span>
+      </div>
+
+      <KpiStrip kpis={kpis} activeKey={activeKpi(params)} />
+
+      <FilterBar
+        keep={[]}
+        filters={[
+          { kind: "select", name: "property", label: "Property", options: distinct(derived, (r) => r.property_name) },
+          { kind: "select", name: "bucket", label: "Aging", options: ["0-30", "31-60", "61-90", "90+"] },
+          { kind: "select", name: "agent", label: "Agent", options: distinct(derived, (r) => r.agent) },
+          { kind: "select", name: "owner", label: "Owner", options: distinct(derived, (r) => r.owners) },
+        ]}
+      />
+
+      {historyRow && (
+        <HistoryPanel
+          tenant={historyRow.tenant}
+          property={historyRow.property_name}
+          unit={historyRow.unit_name}
+          actions={historyFor(data.actions, historyRow.occupancy_id)}
+          closeHref={hrefWith("/accounting", params, { history: undefined })}
+        />
+      )}
+
+      <DelinquencyTable rows={filtered} params={params} canWrite={canWrite} />
+    </div>
+  );
 }

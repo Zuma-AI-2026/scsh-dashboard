@@ -36,9 +36,11 @@ export default async function HomePage() {
               <span className="text-xs text-muted-foreground">
                 {!allowed
                   ? "Your role doesn't include this section"
-                  : section.available
-                    ? "Leasing season KPIs, units, leads, showings, applications"
-                    : "Coming in a later phase"}
+                  : !section.available
+                    ? "Coming in a later phase"
+                    : section.key === "accounting"
+                      ? "Past-due occupancies, aging, follow-up"
+                      : "Leasing season KPIs, units, leads, showings, applications"}
               </span>
             </div>
           );
@@ -59,6 +61,9 @@ export default async function HomePage() {
           </Link>
           <Link href="/admin/properties" className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
             Admin · review managed properties
+          </Link>
+          <Link href="/admin/users" className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            Admin · users &amp; access
           </Link>
         </div>
       )}

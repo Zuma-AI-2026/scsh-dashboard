@@ -29,7 +29,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         </form>
 
         <p className="mt-6 text-xs text-muted-foreground">
-          Access is limited to {ALLOWED_EMAIL_DOMAINS.map((d) => `@${d}`).join(" and ")} accounts.
+          Access is limited to {ALLOWED_EMAIL_DOMAINS.map((d) => `@${d}`).join(" and ")} accounts, or an email an admin has allowlisted.
         </p>
       </div>
     </main>

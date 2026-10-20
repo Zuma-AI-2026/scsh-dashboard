@@ -2,6 +2,7 @@ import "server-only";
 import type { User } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { optionalEnv } from "@/lib/env";
+import { lookupAllowedEmail } from "./allowed-emails";
 import { normalizeEmail } from "./allowed-domains";
 import { isAppRole, type AppRole } from "./roles";
 
@@ -40,14 +41,15 @@ export function resolveDisplayName(user: User): string | null {
 export type ProvisionResult = { ok: true; role: AppRole; created: boolean } | { ok: false; error: string };
 
 /**
- * Creates or refreshes the app_users row for a signed-in, domain-approved user.
+ * Creates or refreshes the app_users row for a signed-in, approved user.
  * Uses the service-role client (RLS bypass). Every Supabase error is checked
  * and returned — nothing is swallowed.
  *
- *  - new row: role 'viewer', or 'admin' if the email equals ADMIN_EMAIL
+ *  - new row: role from allowed_emails if present, else 'viewer', or 'admin' if
+ *    the email equals ADMIN_EMAIL
  *  - existing row: refresh display name / auth id / last login; ADMIN_EMAIL is forced to 'admin'
  */
-export async function ensureAppUser(user: User, email: string): Promise<ProvisionResult> {
+export async function ensureAppUser(user: User, email: string, opts?: { allowlistRole?: AppRole | null }): Promise<ProvisionResult> {
   const adminEmail = normalizeEmail(optionalEnv("ADMIN_EMAIL"));
   const isConfiguredAdmin = adminEmail !== "" && email === adminEmail;
   const displayName = resolveDisplayName(user);
@@ -64,7 +66,9 @@ export async function ensureAppUser(user: User, email: string): Promise<Provisio
   if (selectError) return { ok: false, error: `select app_users: ${selectError.message} (${selectError.code})` };
 
   if (!existing) {
-    const role: AppRole = isConfiguredAdmin ? "admin" : "viewer";
+    let allowlistRole = opts?.allowlistRole;
+    if (allowlistRole === undefined) allowlistRole = (await lookupAllowedEmail(email))?.role ?? null;
+    const role: AppRole = isConfiguredAdmin ? "admin" : allowlistRole && isAppRole(allowlistRole) ? allowlistRole : "viewer";
     const { error } = await admin
       .from("app_users")
       .insert({ email, display_name: displayName, role, auth_user_id: user.id, last_login_at: now });

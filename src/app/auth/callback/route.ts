@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { isAllowedEmail } from "@/lib/auth/allowed-domains";
+import { maySignIn } from "@/lib/auth/allowed-emails";
 import { ensureAppUser, resolveEmail } from "@/lib/auth/provision";
 import { safeNextPath, siteOrigin } from "@/lib/auth/site-url";
 
@@ -11,8 +11,9 @@ import { safeNextPath, siteOrigin } from "@/lib/auth/site-url";
  * Microsoft -> Supabase -> here. We:
  *  1. exchange the code for a session,
  *  2. REJECT anyone whose email is not @scshdev.com / @scstudenthousing.com
- *     (sign them out and delete the stray auth user),
- *  3. provision / update their row in app_users (ADMIN_EMAIL => admin),
+ *     AND not on allowed_emails (sign them out and delete the stray auth user),
+ *  3. provision / update their row in app_users (ADMIN_EMAIL => admin;
+ *     allowlisted emails get the stored role on first sign-in),
  *  4. send them on their way.
  *
  * Every step logs with the [auth/callback] prefix so failures are visible in
@@ -42,7 +43,8 @@ export async function GET(request: NextRequest) {
   const { email, from } = resolveEmail(user);
   console.log(`[auth/callback] signed in user=${user.id} email=${email ?? "(none)"} via ${from} provider=${user.app_metadata?.provider}`);
 
-  if (!isAllowedEmail(email)) {
+  const access = await maySignIn(email);
+  if (!access.ok) {
     console.warn("[auth/callback] REJECTED sign-in for", email ?? "(no email)");
     await supabase.auth.signOut();
     try {
@@ -54,7 +56,7 @@ export async function GET(request: NextRequest) {
     return deny("domain");
   }
 
-  const result = await ensureAppUser(user, email!);
+  const result = await ensureAppUser(user, email!, { allowlistRole: access.allowlisted?.role ?? null });
   if (result.ok) {
     console.log(`[auth/callback] app_users ${result.created ? "created" : "updated"} for ${email} role=${result.role}`);
   } else {

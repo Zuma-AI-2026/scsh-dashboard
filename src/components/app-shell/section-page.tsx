@@ -10,8 +10,8 @@ export function NoAccess({ section, user }: { section: Pick<Section, "label">; u
       <h1 className="mt-3 font-semibold">No access to {section.label}</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         You&apos;re signed in as <span className="text-foreground">{user.email}</span> with the{" "}
-        <span className="font-mono text-foreground">{user.role}</span> role. Ask an admin to change your role in
-        the <span className="font-mono">app_users</span> table.
+        <span className="font-mono text-foreground">{user.role}</span> role. Ask an admin to change it on{" "}
+        <span className="font-mono">/admin/users</span>.
       </p>
     </div>
   );

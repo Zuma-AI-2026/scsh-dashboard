@@ -1,6 +1,6 @@
 /**
- * Only these email domains may sign in. Enforced server-side in
- * src/app/auth/callback/route.ts after Microsoft returns the user.
+ * Company domains that may sign in without being on allowed_emails.
+ * Callback also accepts any email present in public.allowed_emails.
  */
 export const ALLOWED_EMAIL_DOMAINS = ["scshdev.com", "scstudenthousing.com"] as const;
 

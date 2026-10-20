@@ -13,6 +13,7 @@ export type PropertyRow = {
   property_zip: string | null;
   units: number | null;
   owners: string | null;
+  agent_of_record: string | null;
   portfolio: string | null;
   management_fee_percent: number | null;
   visibility: string | null;
@@ -33,6 +34,7 @@ export function mapProperty(row: ReportRow): PropertyRow | null {
     property_zip: str(row.property_zip),
     units: int(row.units),
     owners: str(row.owners),
+    agent_of_record: str(row.agent_of_record),
     portfolio: str(row.portfolio),
     management_fee_percent: num(row.management_fee_percent),
     visibility: str(row.visibility),

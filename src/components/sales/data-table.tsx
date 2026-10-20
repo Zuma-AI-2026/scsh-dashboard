@@ -26,6 +26,7 @@ export function DataTable<T>({
   defaultSort,
   rowClassName,
   empty = "Nothing to show.",
+  pathname = "/sales",
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -34,6 +35,7 @@ export function DataTable<T>({
   defaultSort?: { key: string; dir: "asc" | "desc" };
   rowClassName?: (row: T) => string | undefined;
   empty?: string;
+  pathname?: string;
 }) {
   const sortKey = params.sort ?? defaultSort?.key;
   const sortDir = params.dir ?? defaultSort?.dir ?? "asc";
@@ -58,7 +60,7 @@ export function DataTable<T>({
                   className={cn("h-8 whitespace-nowrap text-[11px] font-medium uppercase tracking-wider text-muted-foreground", c.align === "right" && "text-right", c.className)}
                 >
                   {c.sortable ? (
-                    <Link href={hrefWith("/sales", params, { sort: c.key, dir: nextDir })} scroll={false} className={cn("hover:text-foreground", active && "text-foreground")}>
+                    <Link href={hrefWith(pathname, params, { sort: c.key, dir: nextDir })} scroll={false} className={cn("hover:text-foreground", active && "text-foreground")}>
                       {content}
                     </Link>
                   ) : (

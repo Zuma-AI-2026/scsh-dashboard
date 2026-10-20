@@ -3,15 +3,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { AppfolioError, type ReportRow } from "./client";
 import { mapApplication } from "./mappers/applications";
+import { leaseByOccupancy, mapDelinquency, oldestInvoiceByOccupancy, type DelinquencyRow } from "./mappers/delinquency";
 import { mapGuestCards } from "./mappers/guest-cards";
 import { mapProperty } from "./mappers/properties";
 import { mapShowing } from "./mappers/showings";
 import { mergeUnits } from "./mappers/units";
-import { PAUSE_BETWEEN_REPORTS_MS, paramsFor, SALES_REPORTS, salesDateRange, type ReportSpec, type SalesReportName } from "./reports";
+import { PAUSE_BETWEEN_REPORTS_MS, paramsFor, salesDateRange, SYNCED_REPORTS, type ReportSpec, type SyncedReportName } from "./reports";
 import { runReport } from "./runReport";
 
 export type ReportOutcome = {
-  report: SalesReportName;
+  report: SyncedReportName;
   status: "success" | "error";
   rows: number;
   pages: number;
@@ -23,7 +24,7 @@ export type ReportOutcome = {
 };
 
 export type TableOutcome = {
-  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications";
+  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies";
   status: "success" | "error" | "skipped";
   written: number;
   note?: string;
@@ -142,16 +143,16 @@ export async function syncSales(): Promise<SalesSyncResult> {
 
   await admin.from("sync_state").upsert({ key: "sales", last_status: "running" }, { onConflict: "key" });
 
-  // 1. Pull all seven reports sequentially with a pause (rate limits).
-  const pulled = new Map<SalesReportName, ReportRow[]>();
+  // 1. Pull reports sequentially with a pause (rate limits).
+  const pulled = new Map<SyncedReportName, ReportRow[]>();
   const reports: ReportOutcome[] = [];
-  for (const [i, spec] of SALES_REPORTS.entries()) {
+  for (const [i, spec] of SYNCED_REPORTS.entries()) {
     if (i > 0) await sleep(PAUSE_BETWEEN_REPORTS_MS);
     const { rows, outcome } = await pull(spec, startedAt, admin);
     reports.push(outcome);
     if (outcome.status === "success") pulled.set(spec.name, rows);
   }
-  const ok = (name: SalesReportName) => pulled.has(name);
+  const ok = (name: SyncedReportName) => pulled.has(name);
 
   // 2. Write clean tables. Each depends on its source report(s) having succeeded.
   const tables: TableOutcome[] = [];
@@ -185,6 +186,12 @@ export async function syncSales(): Promise<SalesSyncResult> {
       ? await replaceTable(admin, "applications", "rental_application_id", mapAll(pulled.get("rental_applications")!, mapApplication), startedAt)
       : { table: "applications", status: "skipped", written: 0, note: "rental_applications failed" },
   );
+
+  if (ok("delinquency")) {
+    tables.push(await writeDelinquencies(admin, pulled.get("delinquency")!, pulled.get("rent_roll") ?? [], pulled.get("aged_receivables_detail") ?? [], startedAt));
+  } else {
+    tables.push({ table: "delinquencies", status: "skipped", written: 0, note: "delinquency failed" });
+  }
 
   // 3. Record state.
   const finished = new Date();
@@ -231,6 +238,39 @@ async function writeGuestCards(admin: SupabaseClient, rows: ReportRow[], syncedA
     interestsOut.note = `${interests.length} interests (nothing dropped)`;
   }
   return [peopleOut, interestsOut];
+}
+
+async function writeDelinquencies(
+  admin: SupabaseClient,
+  delinquency: ReportRow[],
+  rentRoll: ReportRow[],
+  aged: ReportRow[],
+  syncedAt: string,
+): Promise<TableOutcome> {
+  const leases = leaseByOccupancy(rentRoll);
+  const oldest = oldestInvoiceByOccupancy(aged);
+  const seen = new Set<number>();
+  const rows: DelinquencyRow[] = [];
+  for (const raw of delinquency) {
+    const mapped = mapDelinquency(raw);
+    if (!mapped || seen.has(mapped.occupancy_id)) continue;
+    seen.add(mapped.occupancy_id);
+    const lease = leases.get(mapped.occupancy_id);
+    rows.push({
+      ...mapped,
+      lease_to: mapped.lease_to ?? lease?.lease_to ?? null,
+      tenant_agent: mapped.tenant_agent ?? lease?.tenant_agent ?? null,
+      oldest_invoice_on: oldest.get(mapped.occupancy_id) ?? null,
+    });
+  }
+  const note = [
+    `${rows.length} occupancies`,
+    rentRoll.length ? "lease_to from rent_roll" : "rent_roll missing — lease_to unset",
+    aged.length ? "oldest invoice from aged_receivables_detail" : "aged_receivables_detail missing — days past due unset",
+  ].join("; ");
+  const out = await replaceTable(admin, "delinquencies", "occupancy_id", rows as unknown as Record<string, unknown>[], syncedAt);
+  if (out.status === "success") out.note = note;
+  return out;
 }
 
 function mapAll<T extends Record<string, unknown>>(rows: ReportRow[], map: (r: ReportRow) => T | null): T[] {

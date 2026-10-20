@@ -3,6 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isAllowedEmail } from "./allowed-domains";
+import { lookupAllowedEmail } from "./allowed-emails";
 import { ensureAppUser, resolveDisplayName, resolveEmail } from "./provision";
 import { canAccessSection, isAppRole, type AppRole, type Section } from "./roles";
 
@@ -45,14 +46,17 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   let role: AppRole = appUser && isAppRole(appUser.role) ? appUser.role : "viewer";
   let provisionError: string | undefined;
 
-  if (!appUser && isAllowedEmail(email)) {
-    const result = await ensureAppUser(user, email);
-    if (result.ok) {
-      role = result.role;
-      console.log(`[auth] app_users ${result.created ? "created" : "updated"} for ${email} role=${role}`);
-    } else {
-      provisionError = result.error;
-      console.error(`[auth] app_users provisioning FAILED for ${email}: ${result.error}`);
+  if (!appUser) {
+    const allowlisted = await lookupAllowedEmail(email);
+    if (isAllowedEmail(email) || allowlisted) {
+      const result = await ensureAppUser(user, email, { allowlistRole: allowlisted?.role ?? null });
+      if (result.ok) {
+        role = result.role;
+        console.log(`[auth] app_users ${result.created ? "created" : "updated"} for ${email} role=${role}`);
+      } else {
+        provisionError = result.error;
+        console.error(`[auth] app_users provisioning FAILED for ${email}: ${result.error}`);
+      }
     }
   }
 

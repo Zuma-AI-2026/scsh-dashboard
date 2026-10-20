@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Access denied" };
 const REASONS: Record<string, { title: string; body: string }> = {
   domain: {
     title: "This account can't access SCSH Dashboard",
-    body: `Only ${ALLOWED_EMAIL_DOMAINS.map((d) => `@${d}`).join(" and ")} accounts are allowed. Sign out of Microsoft and try again with your company account.`,
+    body: `Only ${ALLOWED_EMAIL_DOMAINS.map((d) => `@${d}`).join(" and ")} accounts, or an email an admin has allowlisted, can sign in. Sign out of Microsoft and try again with an approved account.`,
   },
   provider: {
     title: "Microsoft sign-in isn't available",

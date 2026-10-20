@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { syncSales } from "@/lib/appfolio/sync";
+import { normalizeEmail } from "@/lib/auth/allowed-domains";
 import { requireUser } from "@/lib/auth/current-user";
+import { isAppRole } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 async function requireAdmin() {
@@ -63,4 +65,47 @@ export async function confirmAllPendingProperties(): Promise<void> {
   if (error) throw new Error(`Could not confirm pending properties: ${error.message}`);
 
   revalidatePath("/", "layout");
+}
+
+/** Change an existing user's role. Admins cannot change their own role here. */
+export async function setUserRole(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const role = formData.get("role");
+  if (!email.includes("@")) throw new Error("Invalid email.");
+  if (!isAppRole(role)) throw new Error("Invalid role.");
+  if (email === admin.email) throw new Error("You cannot change your own role.");
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("app_users").update({ role }).eq("email", email);
+  if (error) throw new Error(`Could not update role: ${error.message}`);
+
+  revalidatePath("/admin/users");
+}
+
+/** Add an email that may sign in even if it isn't on a company domain. */
+export async function addAllowedEmail(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const role = formData.get("role");
+  if (!email.includes("@") || !email.includes(".")) throw new Error("Enter a full email address.");
+  if (!isAppRole(role)) throw new Error("Invalid role.");
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("allowed_emails").upsert({ email, role, added_by: admin.email }, { onConflict: "email" });
+  if (error) throw new Error(`Could not allowlist email: ${error.message}`);
+
+  revalidatePath("/admin/users");
+}
+
+export async function removeAllowedEmail(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  if (!email.includes("@")) throw new Error("Invalid email.");
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("allowed_emails").delete().eq("email", email);
+  if (error) throw new Error(`Could not remove allowlisted email: ${error.message}`);
+
+  revalidatePath("/admin/users");
 }

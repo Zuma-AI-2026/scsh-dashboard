@@ -1,9 +1,11 @@
 import type { ReportParams } from "./client";
 
 /**
- * The seven AppFolio reports the sales sync pulls, in run order.
- * (Confirmed by discovery on 2026-10-18. tenant_directory exists but is
- * intentionally NOT synced in this phase.)
+ * AppFolio reports the sync pulls, in run order.
+ *
+ * Sales reports confirmed 2026-10-18. Accounting reports confirmed 2026-10-19:
+ *   delinquency                 occupancy grain, aging buckets, last payment, NSF
+ *   aged_receivables_detail     invoice grain — used only for oldest unpaid date
  *
  * IMPORTANT: the Reports API silently IGNORES unknown parameters (verified:
  * a bogus key returns 200 with unchanged rows). Parameter names below were
@@ -23,8 +25,12 @@ export type SalesReportName =
   | "showings"
   | "rental_applications";
 
+export type AccountingReportName = "delinquency" | "aged_receivables_detail";
+
+export type SyncedReportName = SalesReportName | AccountingReportName;
+
 export type ReportSpec = {
-  name: SalesReportName;
+  name: SyncedReportName;
   /** Store a raw_<name> jsonb copy? False for reports with sensitive applicant data. */
   storeRaw: boolean;
   /** Names of the date-range params this report understands (omit if none). */
@@ -34,6 +40,8 @@ export type ReportSpec = {
    * open only). "all" asks for the full history; override to narrow.
    */
   statusParam?: { name: string; values: string[] };
+  /** Single-date "as of" param, filled with today (LA). */
+  asOfParam?: string;
   /** Extra fixed params. */
   params?: ReportParams;
 };
@@ -67,6 +75,14 @@ export const SALES_REPORTS: ReportSpec[] = [
   },
 ];
 
+export const ACCOUNTING_REPORTS: ReportSpec[] = [
+  { name: "delinquency", storeRaw: true },
+  // Docs require occurred_on_to; discovery also returned 200 with no body.
+  { name: "aged_receivables_detail", storeRaw: true, asOfParam: "occurred_on_to" },
+];
+
+export const SYNCED_REPORTS: ReportSpec[] = [...SALES_REPORTS, ...ACCOUNTING_REPORTS];
+
 /** Pause between reports — discovery hit HTTP 429 when calling back-to-back. */
 export const PAUSE_BETWEEN_REPORTS_MS = 1500;
 
@@ -87,6 +103,7 @@ export function paramsFor(spec: ReportSpec, now = new Date()): ReportParams {
     out[spec.dateParams.from] = from;
     out[spec.dateParams.to] = to;
   }
+  if (spec.asOfParam) out[spec.asOfParam] = salesDateRange(now).to;
   if (spec.statusParam) out[spec.statusParam.name] = spec.statusParam.values;
   return out;
 }

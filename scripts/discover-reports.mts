@@ -29,6 +29,10 @@ const CANDIDATE_REPORTS: string[] = [
   "showings",
   "rental_applications",
   "tenant_directory",
+  "delinquency",
+  "delinquency_as_of",
+  "aged_receivables_detail",
+  "unpaid_balances_by_month",
 ];
 
 type Outcome = {
