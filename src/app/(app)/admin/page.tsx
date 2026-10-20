@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { runSyncNow } from "./actions";
 
 export const metadata: Metadata = { title: "Admin" };
-// "Sync now" server action runs ~40s (9 reports with pauses).
+// "Sync now" server action runs ~45s (10 reports with pauses).
 export const maxDuration = 120;
 
 type SyncRun = { id: number; report: string; started_at: string; finished_at: string | null; row_count: number | null; status: string; error: string | null };
@@ -50,12 +50,15 @@ export default async function AdminPage() {
           <Link href="/admin/users" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
             Users
           </Link>
+          <Link href="/admin/delinquency-ladder" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            Ladder
+          </Link>
           <Link href="/admin/properties" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
             Properties
             {pendingReview > 0 && <span className="ml-1.5 rounded-sm bg-warning/15 px-1 text-[10px] font-medium uppercase text-warning">{pendingReview} to review</span>}
           </Link>
           <form action={runSyncNow}>
-            <PendingButton pendingLabel="Syncing… (~30s)">Sync now</PendingButton>
+            <PendingButton pendingLabel="Syncing… (~45s)">Sync now</PendingButton>
           </form>
         </div>
       </div>

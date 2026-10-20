@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 
+export type FilterOption = string | { value: string; label: string };
+
 export type FilterDef =
-  | { kind: "select"; name: string; label: string; options: string[]; allLabel?: string }
+  | { kind: "select"; name: string; label: string; options: FilterOption[]; allLabel?: string }
   | { kind: "date"; name: string; label: string }
   | { kind: "toggle"; name: string; label: string; value?: string };
 
@@ -64,11 +66,14 @@ export function FilterBar({ filters, keep = ["tab"] }: { filters: FilterDef[]; k
             {f.kind === "select" ? (
               <select value={current} onChange={(e) => set(f.name, e.target.value)} className={cn(control, "min-w-28 pr-6")}>
                 <option value="">{f.allLabel ?? "All"}</option>
-                {f.options.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
+                {f.options.map((o) => {
+                  const opt = typeof o === "string" ? { value: o, label: o } : o;
+                  return (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  );
+                })}
               </select>
             ) : (
               <input type="date" value={current} onChange={(e) => set(f.name, e.target.value)} className={cn(control, "[color-scheme:dark]")} />

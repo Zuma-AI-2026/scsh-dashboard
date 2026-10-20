@@ -14,6 +14,16 @@ export type DelinquencyAction = {
   note: string | null;
   acted_by: string;
   acted_at: string;
+  stage_id: number | null;
+};
+
+export type TenantContact = {
+  occupancy_id: number;
+  tenant_id: number;
+  tenant: string | null;
+  phone_numbers: string | null;
+  emails: string | null;
+  primary_tenant: boolean | null;
 };
 
 export const FOLLOW_UP_ACTIONS = ["Called", "Texted", "Emailed", "Payment plan", "Notice served", "Escalated to owner"] as const;

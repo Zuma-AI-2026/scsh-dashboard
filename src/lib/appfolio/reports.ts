@@ -6,6 +6,7 @@ import type { ReportParams } from "./client";
  * Sales reports confirmed 2026-10-18. Accounting reports confirmed 2026-10-19:
  *   delinquency                 occupancy grain, aging buckets, last payment, NSF
  *   aged_receivables_detail     invoice grain — used only for oldest unpaid date
+ *   tenant_directory            phone/email; stored only for occupancy_ids on delinquency, no raw copy
  *
  * IMPORTANT: the Reports API silently IGNORES unknown parameters (verified:
  * a bogus key returns 200 with unchanged rows). Parameter names below were
@@ -25,7 +26,7 @@ export type SalesReportName =
   | "showings"
   | "rental_applications";
 
-export type AccountingReportName = "delinquency" | "aged_receivables_detail";
+export type AccountingReportName = "delinquency" | "aged_receivables_detail" | "tenant_directory";
 
 export type SyncedReportName = SalesReportName | AccountingReportName;
 
@@ -79,6 +80,8 @@ export const ACCOUNTING_REPORTS: ReportSpec[] = [
   { name: "delinquency", storeRaw: true },
   // Docs require occurred_on_to; discovery also returned 200 with no body.
   { name: "aged_receivables_detail", storeRaw: true, asOfParam: "occurred_on_to" },
+  // Phone/email only for occupancy_ids currently on the delinquency report. No raw copy.
+  { name: "tenant_directory", storeRaw: false },
 ];
 
 export const SYNCED_REPORTS: ReportSpec[] = [...SALES_REPORTS, ...ACCOUNTING_REPORTS];

@@ -4,10 +4,10 @@ import { DelinquencyTable } from "@/components/accounting/table";
 import { NoAccess } from "@/components/app-shell/section-page";
 import { FilterBar } from "@/components/sales/filter-bar";
 import { KpiStrip } from "@/components/sales/kpi-strip";
-import { activeKpi, computeKpis, distinct, filterRows, historyFor, sortRows, withDerived } from "@/lib/accounting/analytics";
+import { activeKpi, computeKpis, distinct, filterRows, historyFor, sortDelinquencies, withDerived } from "@/lib/accounting/analytics";
 import { loadAccountingDataset } from "@/lib/accounting/data";
 import { requireSection } from "@/lib/auth/current-user";
-import { canWriteFollowUp, sectionByKey } from "@/lib/auth/roles";
+import { canSeeTenantContacts, canWriteFollowUp, sectionByKey } from "@/lib/auth/roles";
 import { hrefWith, flattenParams } from "@/lib/url";
 
 export const metadata: Metadata = { title: "Accounting" };
@@ -20,9 +20,10 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
   const params = flattenParams(await searchParams);
   const data = await loadAccountingDataset();
   const derived = withDerived(data);
-  const kpis = computeKpis(derived, data.occupiedManaged);
-  const filtered = sortRows(filterRows(derived, params), params.sort, params.dir ?? "desc", "amount_receivable");
+  const kpis = computeKpis(derived, data.occupiedManaged, data.stages);
+  const filtered = sortDelinquencies(filterRows(derived, params), params);
   const canWrite = canWriteFollowUp(user.role);
+  const showContacts = canSeeTenantContacts(user.role);
 
   const historyId = params.history ? Number(params.history) : NaN;
   const historyRow = Number.isInteger(historyId) ? derived.find((r) => r.occupancy_id === historyId) : undefined;
@@ -37,15 +38,26 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
         </span>
       </div>
 
-      <KpiStrip kpis={kpis} activeKey={activeKpi(params)} />
+      <KpiStrip kpis={kpis.money} activeKey={activeKpi(params)} />
+      <KpiStrip kpis={kpis.ladder} activeKey={activeKpi(params)} />
 
       <FilterBar
         keep={[]}
         filters={[
           { kind: "select", name: "property", label: "Property", options: distinct(derived, (r) => r.property_name) },
           { kind: "select", name: "bucket", label: "Aging", options: ["0-30", "31-60", "61-90", "90+"] },
+          {
+            kind: "select",
+            name: "stage",
+            label: "Stage",
+            options: data.stages
+              .filter((s) => s.is_active)
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((s) => ({ value: String(s.id), label: s.name })),
+          },
           { kind: "select", name: "agent", label: "Agent", options: distinct(derived, (r) => r.agent) },
           { kind: "select", name: "owner", label: "Owner", options: distinct(derived, (r) => r.owners) },
+          { kind: "toggle", name: "overdue", label: "Actions overdue", value: "1" },
         ]}
       />
 
@@ -55,11 +67,12 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
           property={historyRow.property_name}
           unit={historyRow.unit_name}
           actions={historyFor(data.actions, historyRow.occupancy_id)}
+          stages={data.stages}
           closeHref={hrefWith("/accounting", params, { history: undefined })}
         />
       )}
 
-      <DelinquencyTable rows={filtered} params={params} canWrite={canWrite} />
+      <DelinquencyTable rows={filtered} params={params} canWrite={canWrite} showContacts={showContacts} stages={data.stages} />
     </div>
   );
 }

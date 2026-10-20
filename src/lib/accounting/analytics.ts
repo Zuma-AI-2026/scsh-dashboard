@@ -3,7 +3,8 @@ import { formatMoney } from "@/lib/format";
 import type { Kpi } from "@/lib/sales/analytics";
 import { hrefWith } from "@/lib/url";
 import type { AccountingDataset } from "./data";
-import type { Delinquency, DelinquencyAction } from "./types";
+import { currentStageOf, isActionOverdue, nextActionDueOf, OWNER_TYPE_LABEL, type DelinquencyStage } from "./ladder";
+import type { Delinquency, DelinquencyAction, TenantContact } from "./types";
 
 export type Params = Record<string, string | undefined>;
 
@@ -12,27 +13,53 @@ export type DelinquencyView = Delinquency & {
   days_past_due: number | null;
   latest_action: DelinquencyAction | null;
   agent: string | null;
+  current_stage: DelinquencyStage | null;
+  next_action_due: DelinquencyStage | null;
+  action_overdue: boolean;
+  contact: TenantContact | null;
 };
 
 export function withDerived(data: AccountingDataset, now = new Date()): DelinquencyView[] {
   const latestByOcc = new Map<number, DelinquencyAction>();
+  const fulfilledByOcc = new Map<number, Set<number>>();
   for (const a of data.actions) {
     if (!latestByOcc.has(a.occupancy_id)) latestByOcc.set(a.occupancy_id, a);
+    if (a.stage_id !== null) {
+      const set = fulfilledByOcc.get(a.occupancy_id) ?? new Set<number>();
+      set.add(a.stage_id);
+      fulfilledByOcc.set(a.occupancy_id, set);
+    }
   }
-  return data.delinquencies.map((d) => ({
-    ...d,
-    aging_bucket: agingBucketOf(d),
-    days_past_due: daysPastDue(d.oldest_invoice_on, now),
-    latest_action: latestByOcc.get(d.occupancy_id) ?? null,
-    agent: d.tenant_agent || d.agent_of_record || null,
-  }));
+
+  const contactByOcc = new Map<number, TenantContact>();
+  for (const c of data.contacts) {
+    const prev = contactByOcc.get(c.occupancy_id);
+    if (!prev || (c.primary_tenant && !prev.primary_tenant)) contactByOcc.set(c.occupancy_id, c);
+  }
+
+  return data.delinquencies.map((d) => {
+    const days = daysPastDue(d, now);
+    const current = currentStageOf(data.stages, days);
+    const next = nextActionDueOf(data.stages, days, fulfilledByOcc.get(d.occupancy_id) ?? new Set());
+    return {
+      ...d,
+      aging_bucket: agingBucketOf(d),
+      days_past_due: days,
+      latest_action: latestByOcc.get(d.occupancy_id) ?? null,
+      agent: d.tenant_agent || d.agent_of_record || null,
+      current_stage: current,
+      next_action_due: next,
+      action_overdue: isActionOverdue(next, days),
+      contact: contactByOcc.get(d.occupancy_id) ?? null,
+    };
+  });
 }
 
 function bucketSum(rows: Delinquency[], key: "bucket_0_30" | "bucket_31_60" | "bucket_61_90" | "bucket_90_plus"): number {
   return rows.reduce((n, r) => n + (r[key] ?? 0), 0);
 }
 
-export function computeKpis(rows: DelinquencyView[], occupiedManaged: number): Kpi[] {
+export function computeKpis(rows: DelinquencyView[], occupiedManaged: number, stages: DelinquencyStage[]): { money: Kpi[]; ladder: Kpi[] } {
   const total = rows.reduce((n, r) => n + (r.amount_receivable ?? 0), 0);
   const count = rows.length;
   const pct = occupiedManaged ? `${Math.round((count / occupiedManaged) * 100)}%` : "—";
@@ -44,7 +71,9 @@ export function computeKpis(rows: DelinquencyView[], occupiedManaged: number): K
     { key: "90+", label: "90+ days", bucket: "90+", field: "bucket_90_plus" },
   ];
 
-  return [
+  const overdueN = rows.filter((r) => r.action_overdue).length;
+
+  const money: Kpi[] = [
     {
       key: "past-due",
       label: "Total past due",
@@ -82,10 +111,39 @@ export function computeKpis(rows: DelinquencyView[], occupiedManaged: number): K
       };
     }),
   ];
+
+  const ladder: Kpi[] = [
+    {
+      key: "actions-overdue",
+      label: "Actions overdue",
+      value: String(overdueN),
+      sub: overdueN ? "next step's day has passed" : "all due steps logged",
+      href: hrefWith(path, {}, { overdue: "1", kpi: "actions-overdue" }),
+      tone: overdueN ? "negative" : "positive",
+    },
+    ...stages
+      .filter((s) => s.is_active)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((s) => {
+        const n = rows.filter((r) => r.current_stage?.id === s.id).length;
+        return {
+          key: `stage-${s.id}`,
+          label: s.name,
+          value: String(n),
+          sub: `day ${s.trigger_day} · ${OWNER_TYPE_LABEL[s.owner_type]}`,
+          href: hrefWith(path, {}, { stage: String(s.id), kpi: `stage-${s.id}` }),
+          tone: n ? ("negative" as const) : ("neutral" as const),
+        };
+      }),
+  ];
+
+  return { money, ladder };
 }
 
 export function activeKpi(p: Params): string | null {
   if (p.kpi) return p.kpi;
+  if (p.overdue === "1") return "actions-overdue";
+  if (p.stage) return `stage-${p.stage}`;
   if (p.bucket) return p.bucket;
   return null;
 }
@@ -94,7 +152,23 @@ const lower = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 const eq = (a: string | null | undefined, b: string | undefined) => !b || lower(a) === lower(b);
 
 export function filterRows(rows: DelinquencyView[], p: Params): DelinquencyView[] {
-  return rows.filter((r) => eq(r.property_name, p.property) && eq(r.aging_bucket, p.bucket) && eq(r.agent, p.agent) && eq(r.owners, p.owner));
+  return rows.filter((r) => {
+    if (!eq(r.property_name, p.property)) return false;
+    if (!eq(r.aging_bucket, p.bucket)) return false;
+    if (!eq(r.agent, p.agent)) return false;
+    if (!eq(r.owners, p.owner)) return false;
+    if (p.stage && String(r.current_stage?.id ?? "") !== p.stage) return false;
+    if (p.overdue === "1" && !r.action_overdue) return false;
+    return true;
+  });
+}
+
+export function sortDelinquencies(rows: DelinquencyView[], p: Params): DelinquencyView[] {
+  if (p.sort) return sortRows(rows, p.sort, p.dir, "amount_receivable");
+  return [...rows].sort((a, b) => {
+    if (a.action_overdue !== b.action_overdue) return a.action_overdue ? -1 : 1;
+    return (b.amount_receivable ?? 0) - (a.amount_receivable ?? 0);
+  });
 }
 
 export function sortRows<T extends Record<string, unknown>>(rows: T[], key: string | undefined, dir: string | undefined, fallback: keyof T & string): T[] {

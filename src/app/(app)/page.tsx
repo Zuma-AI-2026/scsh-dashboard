@@ -65,6 +65,9 @@ export default async function HomePage() {
           <Link href="/admin/users" className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
             Admin · users &amp; access
           </Link>
+          <Link href="/admin/delinquency-ladder" className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            Admin · delinquency ladder
+          </Link>
         </div>
       )}
     </div>

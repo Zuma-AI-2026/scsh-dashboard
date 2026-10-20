@@ -1,3 +1,4 @@
+import { laDate, laParts } from "@/lib/season";
 import type { ReportRow } from "../client";
 import { bool, dateOnly, int, num, str } from "./helpers";
 
@@ -108,10 +109,36 @@ export function agingBucketOf(row: Pick<DelinquencyRow, "bucket_0_30" | "bucket_
   return null;
 }
 
-export function daysPastDue(oldestInvoiceOn: string | null | undefined, now = new Date()): number | null {
-  if (!oldestInvoiceOn) return null;
-  const then = Date.parse(`${oldestInvoiceOn}T00:00:00`);
-  if (Number.isNaN(then)) return null;
-  const ms = now.getTime() - then;
-  return Math.max(0, Math.floor(ms / 86_400_000));
+/** Lower bound of the oldest non-zero AppFolio aging bucket. */
+export function daysPastDueFromBucket(row: Pick<DelinquencyRow, "bucket_0_30" | "bucket_31_60" | "bucket_61_90" | "bucket_90_plus">): number | null {
+  const bucket = agingBucketOf(row);
+  if (bucket === "90+") return 90;
+  if (bucket === "61-90") return 61;
+  if (bucket === "31-60") return 31;
+  if (bucket === "0-30") return 0;
+  return null;
+}
+
+function daysBetweenLa(fromYmd: string, now: Date): number | null {
+  const m = fromYmd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const start = laDate(Number(m[1]), Number(m[2]), Number(m[3]));
+  const p = laParts(now);
+  const today = laDate(p.year, p.month, p.day);
+  return Math.max(0, Math.round((today.getTime() - start.getTime()) / 86_400_000));
+}
+
+/**
+ * Days past due: oldest unpaid invoice in aged_receivables_detail, else the
+ * lower bound of the delinquency report's oldest non-zero aging bucket.
+ */
+export function daysPastDue(
+  row: Pick<DelinquencyRow, "oldest_invoice_on" | "bucket_0_30" | "bucket_31_60" | "bucket_61_90" | "bucket_90_plus">,
+  now = new Date(),
+): number | null {
+  if (row.oldest_invoice_on) {
+    const fromInvoice = daysBetweenLa(row.oldest_invoice_on, now);
+    if (fromInvoice !== null) return fromInvoice;
+  }
+  return daysPastDueFromBucket(row);
 }

@@ -43,3 +43,8 @@ export function sectionByKey(key: SectionKey): Section {
 export function canWriteFollowUp(role: AppRole): boolean {
   return role === "admin" || role === "accounting";
 }
+
+/** Phone/email from tenant_contacts — partner sees the table, not the contact. */
+export function canSeeTenantContacts(role: AppRole): boolean {
+  return role === "admin" || role === "accounting";
+}

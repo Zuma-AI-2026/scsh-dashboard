@@ -5,6 +5,7 @@ import { AppfolioError, type ReportRow } from "./client";
 import { mapApplication } from "./mappers/applications";
 import { leaseByOccupancy, mapDelinquency, oldestInvoiceByOccupancy, type DelinquencyRow } from "./mappers/delinquency";
 import { mapGuestCards } from "./mappers/guest-cards";
+import { mapTenantContact, occupancyIdsFromDelinquency } from "./mappers/tenant-contacts";
 import { mapProperty } from "./mappers/properties";
 import { mapShowing } from "./mappers/showings";
 import { mergeUnits } from "./mappers/units";
@@ -24,7 +25,7 @@ export type ReportOutcome = {
 };
 
 export type TableOutcome = {
-  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies";
+  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies" | "tenant_contacts";
   status: "success" | "error" | "skipped";
   written: number;
   note?: string;
@@ -193,6 +194,17 @@ export async function syncSales(): Promise<SalesSyncResult> {
     tables.push({ table: "delinquencies", status: "skipped", written: 0, note: "delinquency failed" });
   }
 
+  if (ok("delinquency") && ok("tenant_directory")) {
+    tables.push(await writeTenantContacts(admin, pulled.get("tenant_directory")!, pulled.get("delinquency")!, startedAt));
+  } else {
+    tables.push({
+      table: "tenant_contacts",
+      status: "skipped",
+      written: 0,
+      note: !ok("delinquency") ? "delinquency failed" : "tenant_directory failed",
+    });
+  }
+
   // 3. Record state.
   const finished = new Date();
   const anyError = reports.some((r) => r.status === "error") || tables.some((t) => t.status === "error");
@@ -238,6 +250,25 @@ async function writeGuestCards(admin: SupabaseClient, rows: ReportRow[], syncedA
     interestsOut.note = `${interests.length} interests (nothing dropped)`;
   }
   return [peopleOut, interestsOut];
+}
+
+async function writeTenantContacts(admin: SupabaseClient, directory: ReportRow[], delinquency: ReportRow[], syncedAt: string): Promise<TableOutcome> {
+  const allowed = occupancyIdsFromDelinquency(delinquency);
+  const seen = new Set<string>();
+  const rows: NonNullable<ReturnType<typeof mapTenantContact>>[] = [];
+  for (const raw of directory) {
+    const mapped = mapTenantContact(raw, allowed);
+    if (!mapped) continue;
+    const key = `${mapped.occupancy_id}:${mapped.tenant_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(mapped);
+  }
+  const out = await replaceTable(admin, "tenant_contacts", "occupancy_id,tenant_id", rows as Record<string, unknown>[], syncedAt);
+  if (out.status === "success") {
+    out.note = `${rows.length} contacts for ${allowed.size} delinquent occupancies (from ${directory.length} tenant_directory rows)`;
+  }
+  return out;
 }
 
 async function writeDelinquencies(
