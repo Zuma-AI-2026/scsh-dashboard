@@ -18,7 +18,10 @@ export type PropertyRow = {
   management_fee_percent: number | null;
   visibility: string | null;
   property_created_on: string | null;
+  property_integration_id: string | null;
 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function mapProperty(row: ReportRow): PropertyRow | null {
   const property_id = int(row.property_id);
@@ -39,5 +42,11 @@ export function mapProperty(row: ReportRow): PropertyRow | null {
     management_fee_percent: num(row.management_fee_percent),
     visibility: str(row.visibility),
     property_created_on: dateOnly(row.property_created_on),
+    property_integration_id: integrationId(row.property_integration_id),
   };
+}
+
+function integrationId(v: unknown): string | null {
+  const s = str(v);
+  return s && UUID.test(s) ? s.toLowerCase() : null;
 }

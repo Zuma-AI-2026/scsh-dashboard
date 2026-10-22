@@ -104,7 +104,11 @@ async function replaceTable(admin: SupabaseClient, table: TableOutcome["table"],
  */
 async function writeProperties(admin: SupabaseClient, rows: ReportRow[], syncedAt: string): Promise<TableOutcome> {
   try {
-    const mapped = rows.map(mapProperty).filter((p): p is NonNullable<typeof p> => p !== null);
+    const hasIntegrationId = !(await admin.from("properties").select("property_integration_id").limit(1)).error;
+    const mapped = rows
+      .map(mapProperty)
+      .filter((p): p is NonNullable<typeof p> => p !== null)
+      .map(({ property_integration_id, ...rest }) => (hasIntegrationId ? { ...rest, property_integration_id } : rest));
     const { data: existingRows, error } = await admin.from("properties").select("property_id");
     if (error) throw new Error(`read properties: ${error.message}`);
     const existing = new Set((existingRows ?? []).map((r) => r.property_id as number));
