@@ -1,5 +1,5 @@
 /**
- * Body validation for the n8n webhooks (/api/pq-submit, /api/leads/assign).
+ * Body validation for the n8n webhooks (/api/pq-submit, /api/leads/assign, /api/leads/notified).
  * Pure, no imports (tested by tests/webhook-payloads.test.mts). Unknown keys
  * are dropped; empty strings become null.
  */
@@ -19,22 +19,25 @@ export type PqSubmission = {
   submitted_at: string | null;
   score: number | null;
   tier: string | null;
+  /** Free text from the form (e.g. "anything else?"), up to 2,000 characters. */
+  notes: string | null;
 };
 
 export type PqParseResult = { ok: true; value: PqSubmission } | { ok: false; error: string };
 
 const TEXT_FIELDS = ["name", "email", "phone", "property", "move_in", "budget", "room_type", "length_of_stay", "qualify_method", "tier"] as const;
 const MAX_TEXT = 500;
+const MAX_LONG_TEXT = 2000;
 
 class Invalid extends Error {}
 
-function text(body: Record<string, unknown>, key: string): string | null {
+function text(body: Record<string, unknown>, key: string, max = MAX_TEXT): string | null {
   const v = body[key];
   if (v === undefined || v === null) return null;
   if (typeof v === "number" && Number.isFinite(v)) return String(v);
   if (typeof v !== "string") throw new Invalid(`${key} must be a string`);
   const t = v.trim();
-  if (t.length > MAX_TEXT) throw new Invalid(`${key} is longer than ${MAX_TEXT} characters`);
+  if (t.length > max) throw new Invalid(`${key} is longer than ${max} characters`);
   return t === "" ? null : t;
 }
 
@@ -74,6 +77,7 @@ export function parsePqSubmission(body: unknown): PqParseResult {
         group_size,
         submitted_at: timestamp(b, "submitted_at"),
         score: number(b, "score"),
+        notes: text(b, "notes", MAX_LONG_TEXT),
       },
     };
   } catch (err) {
@@ -82,7 +86,7 @@ export function parsePqSubmission(body: unknown): PqParseResult {
   }
 }
 
-export type LeadInquiry = { email: string | null; phone: string | null; name: string | null; source: string | null };
+export type LeadInquiry = { email: string | null; phone: string | null; name: string | null; source: string | null; summary: string | null };
 
 export type LeadInquiryParseResult = { ok: true; value: LeadInquiry } | { ok: false; error: string };
 
@@ -91,7 +95,36 @@ export function parseLeadInquiry(body: unknown): LeadInquiryParseResult {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, error: "body must be a JSON object" };
   const b = body as Record<string, unknown>;
   try {
-    return { ok: true, value: { email: text(b, "email"), phone: text(b, "phone"), name: text(b, "name"), source: text(b, "source") } };
+    return {
+      ok: true,
+      value: { email: text(b, "email"), phone: text(b, "phone"), name: text(b, "name"), source: text(b, "source"), summary: text(b, "summary", MAX_LONG_TEXT) },
+    };
+  } catch (err) {
+    if (err instanceof Invalid) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+export type LeadNotified = { lead_id: number; channel: string; recipient: string; test_redirect: boolean; sent_at: string | null };
+
+export type LeadNotifiedParseResult = { ok: true; value: LeadNotified } | { ok: false; error: string };
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** /api/leads/notified — one notice n8n sent about a lead. */
+export function parseLeadNotified(body: unknown): LeadNotifiedParseResult {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, error: "body must be a JSON object" };
+  const b = body as Record<string, unknown>;
+  try {
+    const lead_id = number(b, "lead_id");
+    if (lead_id === null || !Number.isInteger(lead_id) || lead_id < 1) return { ok: false, error: "lead_id must be a positive whole number" };
+    const channel = (text(b, "channel") ?? "email").toLowerCase();
+    if (!/^[a-z_]{1,20}$/.test(channel)) return { ok: false, error: "channel must be a word such as \"email\"" };
+    const recipient = text(b, "recipient");
+    if (recipient === null || !EMAIL.test(recipient)) return { ok: false, error: "recipient must be an email address" };
+    const t = b.test_redirect;
+    if (t !== undefined && t !== null && typeof t !== "boolean") return { ok: false, error: "test_redirect must be true or false" };
+    return { ok: true, value: { lead_id, channel, recipient: recipient.toLowerCase(), test_redirect: t === true, sent_at: timestamp(b, "sent_at") } };
   } catch (err) {
     if (err instanceof Invalid) return { ok: false, error: err.message };
     throw err;

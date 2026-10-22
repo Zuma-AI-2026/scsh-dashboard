@@ -13,7 +13,7 @@ const agents: Agent[] = [
 let nextId = 1;
 function lead(over: Partial<LeadView>): LeadView {
   return {
-    id: nextId++, guest_card_id: null, email_norm: null, phone_norm: null, name: "Lead", first_seen_at: "2026-10-20T17:00:00Z",
+    id: nextId++, guest_card_id: null, notified: null, email_norm: null, phone_norm: null, name: "Lead", first_seen_at: "2026-10-20T17:00:00Z",
     source_first: null, owner_agent_id: null, rotation: "B", converted_from_b: false, has_form: false, has_application: false,
     stage: "new", status: "active", duplicate_of_lead_id: null, appfolio_assigned_user: null, owner_mismatch: false, assigned_via: null,
     assigned_at: null, turn_agent_id: null, turn_rotation: null, turn_at: null, last_event_at: null, appfolio_status: null,

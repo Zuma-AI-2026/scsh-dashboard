@@ -1,4 +1,5 @@
 import { OwnerCell, StageBadge } from "@/components/leads/badges";
+import { LeadRowActions } from "@/components/leads/lead-row-actions";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { dayLabel, laDay } from "@/lib/leads/activity";
 import { channelLabel, formatPhone } from "@/lib/leads/analytics";
@@ -19,7 +20,7 @@ function Note({ children }: { children: React.ReactNode }) {
 }
 
 export function MyLeadsTab({ leads, params, now, user }: { leads: LeadsDataset | null; params: Params; now: Date; user: CurrentUser }) {
-  if (!leads) return <Note>Lead tracking isn&apos;t set up yet. Run migrations 0008 – 0015 in Supabase, then sync once.</Note>;
+  if (!leads) return <Note>Lead tracking isn&apos;t set up yet. Run migrations 0008 – 0016 in Supabase, then sync once.</Note>;
 
   const isAdmin = user.role === "admin";
   const me = leads.agents.find((a) => a.email.toLowerCase() === user.email.toLowerCase()) ?? null;
@@ -68,10 +69,21 @@ export function MyLeadsTab({ leads, params, now, user }: { leads: LeadsDataset |
       </span>
     ),
   };
-  const phone: Column<MyLead> = { key: "phone_norm", label: "Phone", render: (r) => text(formatPhone(r.phone_norm)) };
+  const phone: Column<MyLead> = {
+    key: "phone_norm",
+    label: "Phone",
+    render: (r) => (r.phone_norm ? <span className="whitespace-nowrap">{formatPhone(r.phone_norm)}</span> : <span className={cn("text-xs italic", dim)}>no phone</span>),
+  };
   const channel: Column<MyLead> = { key: "channel", label: "Channel", render: (r) => <span title={r.source_first ?? "No source"}>{channelLabel(r.channel)}</span> };
   const property: Column<MyLead> = { key: "property_name", label: "Property", render: (r) => text(r.property_name) };
   const owner: Column<MyLead>[] = showOwner ? [{ key: "owner_name", label: "Owner", render: (r) => <OwnerCell lead={r} /> }] : [];
+  const activeAgents = leads.agents.filter((a) => a.active).map((a) => ({ id: a.id, name: a.name }));
+  const canAct = (r: MyLead) => isAdmin || (user.role === "sales" && me !== null && r.owner_agent_id === me.id);
+  const actions: Column<MyLead> = {
+    key: "actions",
+    label: "",
+    render: (r) => (canAct(r) ? <LeadRowActions leadId={r.id} ownerId={r.owner_agent_id} agents={activeAgents} /> : null),
+  };
 
   const columns: Record<MyLeadGroup, Column<MyLead>[]> = {
     nurturing: [
@@ -88,6 +100,7 @@ export function MyLeadsTab({ leads, params, now, user }: { leads: LeadsDataset |
       property,
       { key: "first_seen_at", label: "First seen", render: (r) => dayLabel(laDay(r.first_seen_at), true) },
       ...owner,
+      actions,
     ],
     active: [
       last,
@@ -98,8 +111,9 @@ export function MyLeadsTab({ leads, params, now, user }: { leads: LeadsDataset |
       { key: "stage_now", label: "Stage", render: (r) => <StageBadge stage={r.stage_now} /> },
       { key: "why", label: "Why active", render: (r) => <span className={cn("text-xs", dim)}>{r.rotation === "A" ? (r.converted_from_b ? "Form (from B)" : "Form / application") : "Replied"}</span> },
       ...owner,
+      actions,
     ],
-    tour: [last, name, phone, channel, property, { key: "days_idle", label: "Days idle", align: "right", render: (r) => <span className="tabular">{r.days_idle}</span> }, ...owner],
+    tour: [last, name, phone, channel, property, { key: "days_idle", label: "Days idle", align: "right", render: (r) => <span className="tabular">{r.days_idle}</span> }, ...owner, actions],
     application: [
       last,
       name,
@@ -107,6 +121,7 @@ export function MyLeadsTab({ leads, params, now, user }: { leads: LeadsDataset |
       property,
       { key: "application_status", label: "Application", render: (r) => (r.application_status ? <StatusBadge value={r.application_status} /> : "Yes") },
       ...owner,
+      actions,
     ],
   };
 

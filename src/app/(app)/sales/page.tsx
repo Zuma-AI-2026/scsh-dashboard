@@ -64,7 +64,7 @@ export default async function SalesPage({ searchParams }: PageProps<"/sales">) {
       {tab === "showings" && <ShowingsTab {...tabProps} />}
       {tab === "applications" && <ApplicationsTab {...tabProps} />}
       {tab === "pipeline" && <PipelineTab {...tabProps} />}
-      {tab === "rotation" && <RotationTab leads={leads} params={params} now={now} />}
+      {tab === "rotation" && <RotationTab leads={leads} params={params} now={now} user={user} />}
       {tab === "activity" && <ActivityTab leads={leads} params={params} now={now} />}
       {tab === "mine" && <MyLeadsTab leads={leads} params={params} now={now} user={user} />}
     </div>

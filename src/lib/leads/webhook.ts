@@ -45,7 +45,7 @@ export function invalidPayload(detail: string): NextResponse {
 }
 
 /** Calls the SQL intake function and maps its result to the HTTP contract above. */
-export async function runIntake(fn: "ingest_pq_submission" | "ingest_n8n_inquiry", payload: object, echo: Record<string, unknown> = {}): Promise<NextResponse> {
+export async function runIntake(fn: "ingest_pq_submission" | "ingest_n8n_inquiry" | "record_lead_notified", payload: object, echo: Record<string, unknown> = {}): Promise<NextResponse> {
   const { data, error } = await createSupabaseAdminClient().rpc(fn, { p: payload });
   if (error) {
     console.error(`[${fn}]`, error.message);

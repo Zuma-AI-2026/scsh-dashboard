@@ -72,6 +72,20 @@ export async function setTestMode(formData: FormData): Promise<void> {
   refresh();
 }
 
+/** Where n8n sends every notice while test mode is on (returned as test_recipient). */
+export async function setTestRecipient(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const email = normalizeEmail(String(formData.get("test_recipient") ?? ""));
+  if (!email) throw new Error("Enter a valid email.");
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("app_settings")
+    .upsert({ key: "notifications_test_recipient", value: email, updated_by: admin.email }, { onConflict: "key" });
+  if (error) throw new Error(`Could not save the test inbox: ${error.message}`);
+  refresh();
+}
+
 /** Unassigned leads → one agent. No turn is consumed. */
 export async function bulkAssignLeads(formData: FormData): Promise<void> {
   await requireAdmin();

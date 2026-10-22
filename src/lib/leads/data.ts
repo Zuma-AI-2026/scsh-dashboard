@@ -4,7 +4,7 @@ import type { SalesDataset } from "@/lib/sales/data";
 import { fetchAll } from "@/lib/supabase/fetch-all";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { effectiveStage, resolveDuplicate } from "./rules";
-import type { Agent, LeadRecord, LeadView } from "./types";
+import type { Agent, LeadEvent, LeadRecord, LeadView, Notice } from "./types";
 
 export type LeadsDataset = {
   agents: Agent[];
@@ -17,6 +17,8 @@ export type LeadsDataset = {
   byApp: Map<number, LeadView>;
   goLiveAt: string | null;
   testMode: boolean;
+  /** Where n8n sends every notice while test mode is on (0016). */
+  testRecipient: string | null;
 };
 
 type Setting = { key: string; value: unknown };
@@ -35,7 +37,7 @@ export async function loadLeadsDataset(sales: SalesDataset | null, now = new Dat
     return null;
   }
 
-  const [agentsRes, settingsRes, records, cardLinks, appLinks, qualifying] = await Promise.all([
+  const [agentsRes, settingsRes, records, cardLinks, appLinks, qualifying, notices] = await Promise.all([
     supabase.from("agents").select("id, name, email, appfolio_name, active, a_turns, b_turns, last_assigned_at").order("name"),
     supabase.from("app_settings").select("key, value"),
     fetchAll<LeadRecord>("leads", (a, b) => supabase.from("leads").select("*").order("id").range(a, b)),
@@ -51,6 +53,9 @@ export async function loadLeadsDataset(sales: SalesDataset | null, now = new Dat
     }),
     fetchAll<{ id: number; lead_id: number; at: string }>("lead_events", (a, b) =>
       supabase.from("lead_events").select("id, lead_id, at").in("type", ["form", "application"]).order("id").range(a, b),
+    ),
+    fetchAll<{ id: number; lead_id: number; at: string; payload: Record<string, unknown> }>("lead_events", (a, b) =>
+      supabase.from("lead_events").select("id, lead_id, at, payload").eq("type", "notified").order("id").range(a, b),
     ),
   ]);
   if (agentsRes.error) throw new Error(`agents: ${agentsRes.error.message}`);
@@ -81,6 +86,19 @@ export async function loadLeadsDataset(sales: SalesDataset | null, now = new Dat
   }
 
   const activity = new Map<number, { date: string; type: string | null }>();
+  const notified = new Map<number, Notice>();
+  for (const e of notices) {
+    const root = rootOf(e.lead_id);
+    const prev = notified.get(root);
+    if (prev && prev.at >= e.at) continue;
+    notified.set(root, {
+      at: e.at,
+      channel: String(e.payload.channel ?? "email"),
+      recipient: String(e.payload.recipient ?? ""),
+      test: e.payload.test_redirect === true,
+    });
+  }
+
   const toured = new Set<number>();
   const latestApp = new Map<number, { status: string | null; received: string }>();
   if (sales) {
@@ -113,6 +131,7 @@ export async function loadLeadsDataset(sales: SalesDataset | null, now = new Dat
     stage_now: effectiveStage(r, now),
     appfolio_last_activity: activity.get(r.id)?.date ?? null,
     appfolio_last_activity_type: activity.get(r.id)?.type ?? null,
+    notified: notified.get(r.id) ?? null,
   }));
   const byId = new Map(leads.map((l) => [l.id, l]));
   const pick = (m: Map<number, number>) => {
@@ -133,5 +152,35 @@ export async function loadLeadsDataset(sales: SalesDataset | null, now = new Dat
     byApp: pick(appRoot),
     goLiveAt: typeof goLive === "string" ? goLive : null,
     testMode: settings.get("notifications_test_mode") === true,
+    testRecipient: typeof settings.get("notifications_test_recipient") === "string" ? (settings.get("notifications_test_recipient") as string) : null,
   };
+}
+
+/**
+ * Inquiry / form events for the given leads (only the rows on screen — the
+ * full history is large). Keyed by lead id; newest first.
+ */
+export async function loadLeadIntakeEvents(leadIds: number[]): Promise<Map<number, LeadEvent[]>> {
+  const out = new Map<number, LeadEvent[]>();
+  if (leadIds.length === 0) return out;
+  const supabase = await createSupabaseServerClient();
+  const chunks: number[][] = [];
+  for (let i = 0; i < leadIds.length; i += 150) chunks.push(leadIds.slice(i, i + 150));
+  const results = await Promise.all(
+    chunks.map((ids) =>
+      supabase.from("lead_events").select("id, lead_id, type, payload, at, actor").in("lead_id", ids).in("type", ["inquiry", "form"]).order("at", { ascending: false }),
+    ),
+  );
+  for (const r of results) {
+    if (r.error) {
+      console.warn("[leads] intake events:", r.error.message);
+      continue;
+    }
+    for (const e of (r.data ?? []) as LeadEvent[]) {
+      const list = out.get(e.lead_id) ?? [];
+      list.push(e);
+      out.set(e.lead_id, list);
+    }
+  }
+  return out;
 }

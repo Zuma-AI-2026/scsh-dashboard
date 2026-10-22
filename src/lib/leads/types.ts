@@ -46,6 +46,9 @@ export type LeadRecord = {
   replied_at?: string | null;
 };
 
+/** Latest notice n8n reported for a lead (lead_events type "notified"). */
+export type Notice = { at: string; channel: string; recipient: string; test: boolean };
+
 /** A lead plus what the views show next to it. */
 export type LeadView = LeadRecord & {
   channel: string;
@@ -61,6 +64,7 @@ export type LeadView = LeadRecord & {
   /** Latest AppFolio activity (date, type) across the lead's guest cards — includes agent outreach. */
   appfolio_last_activity: string | null;
   appfolio_last_activity_type: string | null;
+  notified: Notice | null;
 };
 
 export type LeadEvent = {

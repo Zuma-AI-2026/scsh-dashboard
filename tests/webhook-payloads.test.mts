@@ -23,7 +23,7 @@ describe("PQ payload", () => {
   it("accepts the documented payload unchanged", () => {
     const r = parsePqSubmission(full);
     assert.equal(r.ok, true);
-    if (r.ok) assert.deepEqual(r.value, { ...full, submitted_at: "2026-10-22T17:45:00.000Z" });
+    if (r.ok) assert.deepEqual(r.value, { ...full, submitted_at: "2026-10-22T17:45:00.000Z", notes: null });
   });
   it("requires submission_id", () => {
     assert.deepEqual(parsePqSubmission({ ...full, submission_id: "  " }), { ok: false, error: "submission_id is required" });
@@ -51,6 +51,11 @@ describe("PQ payload", () => {
     assert.equal(parsePqSubmission({ submission_id: "x", name: { first: "J" } }).ok, false);
     assert.equal(parsePqSubmission([full]).ok, false);
   });
+  it("keeps the free-text notes (up to 2,000 characters)", () => {
+    const r = parsePqSubmission({ submission_id: "x", notes: "  needs parking  " });
+    assert.equal(r.ok && r.value.notes, "needs parking");
+    assert.equal(parsePqSubmission({ submission_id: "x", notes: "y".repeat(2001) }).ok, false);
+  });
   it("drops unknown keys", () => {
     const r = parsePqSubmission({ ...full, credit_score: 700 });
     assert.equal(r.ok, true);
@@ -60,11 +65,12 @@ describe("PQ payload", () => {
 
 describe("lead inquiry payload", () => {
   it("accepts the documented payload", () => {
-    const body = { email: "jane.doe@usc.edu", phone: "(310) 555-0123", name: "Jane Doe", source: "Zillow" };
+    const body = { email: "jane.doe@usc.edu", phone: "(310) 555-0123", name: "Jane Doe", source: "Zillow", summary: "2 rooms for August, budget $1,300" };
     assert.deepEqual(parseLeadInquiry(body), { ok: true, value: body });
+    assert.equal(parseLeadInquiry({ ...body, summary: "x".repeat(2001) }).ok, false);
   });
   it("every field is optional at this layer; blanks become null", () => {
-    assert.deepEqual(parseLeadInquiry({ phone: " 3105550123 ", email: "" }), { ok: true, value: { email: null, phone: "3105550123", name: null, source: null } });
+    assert.deepEqual(parseLeadInquiry({ phone: " 3105550123 ", email: "" }), { ok: true, value: { email: null, phone: "3105550123", name: null, source: null, summary: null } });
   });
   it("rejects non-objects and wrong types", () => {
     assert.equal(parseLeadInquiry("jane@usc.edu").ok, false);

@@ -16,7 +16,7 @@ import type { Agent, LeadEvent, LeadView } from "@/lib/leads/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { flattenParams, hrefWith } from "@/lib/url";
 import { cn } from "@/lib/utils";
-import { bulkAssignLeads, reassignLead, saveAgent, setAgentActive, setLeadStatus, setTestMode } from "./actions";
+import { bulkAssignLeads, reassignLead, saveAgent, setAgentActive, setLeadStatus, setTestMode, setTestRecipient } from "./actions";
 
 export const metadata: Metadata = { title: "Agents · Admin" };
 
@@ -60,7 +60,7 @@ export default async function AdminAgentsPage({ searchParams }: PageProps<"/admi
               : "Rotation starts with the first lead import after migrations 0008–0011."}
           </p>
         </div>
-        {data && <TestModeSwitch on={data.testMode} />}
+        {data && <TestModeSwitch on={data.testMode} recipient={data.testRecipient} />}
       </div>
 
       {!data ? (
@@ -170,18 +170,36 @@ async function UnresolvedProperties({ data }: { data: LeadsDataset }) {
   );
 }
 
-function TestModeSwitch({ on }: { on: boolean }) {
+function TestModeSwitch({ on, recipient }: { on: boolean; recipient: string | null }) {
+  const target = recipient ?? "the test inbox (not set)";
   return (
-    <form action={setTestMode} className={cn("flex items-center gap-3 rounded-md border px-3 py-2", on ? "border-warning/50 bg-warning/10" : "bg-card")}>
-      <input type="hidden" name="test_mode" value={on ? "false" : "true"} />
-      <div className="text-xs">
-        <div className="font-medium">Email test mode: {on ? <span className="text-warning">ON</span> : <span className={dim}>off</span>}</div>
-        <div className={dim}>Sent to n8n as test_mode; n8n routes mail to the test inbox.</div>
-      </div>
-      <PendingButton size="sm" variant={on ? "default" : "outline"} pendingLabel="Saving…">
-        {on ? "Turn off" : "Turn on"}
-      </PendingButton>
-    </form>
+    <div className={cn("space-y-2 rounded-md border px-3 py-2", on ? "border-warning/50 bg-warning/10" : "bg-card")}>
+      <form action={setTestMode} className="flex items-center gap-3">
+        <input type="hidden" name="test_mode" value={on ? "false" : "true"} />
+        <div className="text-xs">
+          <div className="font-medium">
+            {on ? (
+              <span className="text-warning">Test mode ON — all notices → {target}</span>
+            ) : (
+              <span>Test mode off — notices go to each lead&apos;s owner</span>
+            )}
+          </div>
+          <div className={dim}>Sent to n8n as test_mode / test_recipient on every webhook response.</div>
+        </div>
+        <PendingButton size="sm" variant={on ? "default" : "outline"} pendingLabel="Saving…">
+          {on ? "Turn off" : "Turn on"}
+        </PendingButton>
+      </form>
+      <form action={setTestRecipient} className="flex items-center gap-2">
+        <label className={label} htmlFor="test_recipient">
+          Test inbox
+        </label>
+        <input id="test_recipient" name="test_recipient" type="email" required defaultValue={recipient ?? ""} className={cn(input, "h-7 w-56 text-xs")} />
+        <PendingButton size="sm" variant="outline" pendingLabel="Saving…">
+          Save
+        </PendingButton>
+      </form>
+    </div>
   );
 }
 
