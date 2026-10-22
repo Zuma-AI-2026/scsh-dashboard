@@ -18,6 +18,9 @@ import {
   type Params,
   type Range,
 } from "@/lib/sales/analytics";
+import { OwnerCell, RotationBadge } from "@/components/leads/badges";
+import type { LeadsDataset } from "@/lib/leads/data";
+import type { LeadView } from "@/lib/leads/types";
 import type { SalesDataset } from "@/lib/sales/data";
 import type { Application, GuestCard, Showing, Unit } from "@/lib/sales/types";
 import { cn } from "@/lib/utils";
@@ -25,10 +28,33 @@ import { DataTable, type Column } from "./data-table";
 import { FilterBar } from "./filter-bar";
 import { StatusBadge } from "./status-badge";
 
-type TabProps = { data: SalesDataset; params: Params; season: Season; week: Range; now: Date };
+type TabProps = { data: SalesDataset; leads: LeadsDataset | null; params: Params; season: Season; week: Range; now: Date };
 
 const dim = "text-muted-foreground";
 const text = (v: string | null | undefined) => (v ? v : <span className={dim}>—</span>);
+
+/** Dashboard owner + rotation of the lead behind an AppFolio row (empty until leads are set up). */
+function leadColumns<T>(leads: LeadsDataset | null, find: (leads: LeadsDataset, row: T) => LeadView | undefined): Column<T>[] {
+  if (!leads) return [];
+  return [
+    {
+      key: "lead_owner",
+      label: "Owner",
+      render: (row) => {
+        const lead = find(leads, row);
+        return lead ? <OwnerCell lead={lead} /> : text(null);
+      },
+    },
+    {
+      key: "lead_rotation",
+      label: "Rot.",
+      render: (row) => {
+        const lead = find(leads, row);
+        return lead ? <RotationBadge rotation={lead.rotation} converted={lead.converted_from_b} /> : text(null);
+      },
+    },
+  ];
+}
 const numCell = (v: number | null | undefined) => (v === null || v === undefined ? <span className={dim}>—</span> : v);
 
 function RangeNote({ params, season, week }: { params: Params; season: Season; week: Range }) {
@@ -71,7 +97,7 @@ export function UnitsTab({ data, params }: TabProps) {
 // ---------------------------------------------------------------------------
 // 2. Leads (guest cards)
 // ---------------------------------------------------------------------------
-export function LeadsTab({ data, params, season, week, now }: TabProps) {
+export function LeadsTab({ data, leads, params, season, week, now }: TabProps) {
   const range = rangeFromParams(params, season, week);
   const rows = sortRows(filterLeads(data.leads, data.leadInterests, params, range, now), params.sort, params.dir ?? "desc", "received");
   const stale = rows.filter((g) => isStaleLead(g, now)).length;
@@ -104,7 +130,8 @@ export function LeadsTab({ data, params, season, week, now }: TabProps) {
       },
     },
     { key: "source", label: "Source", sortable: true, render: (g) => text(g.source) },
-    { key: "assigned_user", label: "Agent", sortable: true, render: (g) => text(g.assigned_user) },
+    ...leadColumns<GuestCard>(leads, (l, g) => l.byCard.get(g.guest_card_id)),
+    { key: "assigned_user", label: "AppFolio agent", sortable: true, render: (g) => text(g.assigned_user) },
     { key: "status", label: "Status", sortable: true, render: (g) => <StatusBadge value={g.status} /> },
     { key: "received", label: "Created", sortable: true, render: (g) => formatDateTime(g.received) },
     { key: "last_activity_date", label: "Last activity", sortable: true, render: (g) => <span>{formatDate(g.last_activity_date)}{g.last_activity_type && <span className={cn("ml-1", dim)}>· {g.last_activity_type}</span>}</span> },
@@ -140,7 +167,7 @@ export function LeadsTab({ data, params, season, week, now }: TabProps) {
 // ---------------------------------------------------------------------------
 // 3. Showings
 // ---------------------------------------------------------------------------
-export function ShowingsTab({ data, params, season, week }: TabProps) {
+export function ShowingsTab({ data, leads, params, season, week }: TabProps) {
   const range = rangeFromParams(params, season, week);
   const filtered = filterShowings(data.showings, params, range);
   const upcoming = sortRows(filtered.filter(isUpcomingShowing), "showing_time", "asc", "showing_time");
@@ -150,7 +177,8 @@ export function ShowingsTab({ data, params, season, week }: TabProps) {
     { key: "showing_time", label: "When", sortable: true, render: (s) => formatDateTime(s.showing_time) },
     { key: "guest_card_name", label: "Lead", sortable: true, render: (s) => <span className="font-medium">{text(s.guest_card_name)}</span> },
     { key: "property_name", label: "Unit", sortable: true, render: (s) => <span>{text(s.property_name)}{s.showing_unit && <span className={dim}> · {s.showing_unit}</span>}</span> },
-    { key: "assigned_user", label: "Agent", sortable: true, render: (s) => text(s.assigned_user) },
+    ...leadColumns<Showing>(leads, (l, s) => (s.guest_card_id === null ? undefined : l.byCard.get(s.guest_card_id))),
+    { key: "assigned_user", label: "AppFolio agent", sortable: true, render: (s) => text(s.assigned_user) },
     { key: "type", label: "Type", sortable: true, render: (s) => text(s.type) },
     { key: "status", label: "Outcome", sortable: true, render: (s) => <StatusBadge value={s.status} /> },
     { key: "rental_application_status", label: "Application", sortable: true, render: (s) => (s.rental_application_status ? <StatusBadge value={s.rental_application_status} /> : text(null)) },
@@ -184,7 +212,7 @@ export function ShowingsTab({ data, params, season, week }: TabProps) {
 // ---------------------------------------------------------------------------
 // 4. Applications
 // ---------------------------------------------------------------------------
-export function ApplicationsTab({ data, params, season, week, now }: TabProps) {
+export function ApplicationsTab({ data, leads, params, season, week, now }: TabProps) {
   const range = rangeFromParams(params, season, week);
   const rows = sortRows(filterApplications(data.applications, params, range), params.sort, params.dir ?? "desc", "received");
 
@@ -198,7 +226,8 @@ export function ApplicationsTab({ data, params, season, week, now }: TabProps) {
     { key: "days_in_status", label: "Days in status", align: "right", render: (a) => numCell(daysInStatus(a, now)) },
     { key: "desired_move_in", label: "Desired move-in", sortable: true, render: (a) => formatDate(a.desired_move_in) },
     { key: "lease_start_date", label: "Lease", sortable: true, render: (a) => (a.lease_start_date ? `${formatDate(a.lease_start_date)} → ${formatDate(a.lease_end_date)}` : text(null)) },
-    { key: "assigned_user", label: "Agent", sortable: true, render: (a) => text(a.assigned_user) },
+    ...leadColumns<Application>(leads, (l, a) => l.byApp.get(a.rental_application_id)),
+    { key: "assigned_user", label: "AppFolio agent", sortable: true, render: (a) => text(a.assigned_user) },
   ];
 
   return (

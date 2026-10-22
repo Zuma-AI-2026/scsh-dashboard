@@ -9,6 +9,7 @@ export type FilterOption = string | { value: string; label: string };
 export type FilterDef =
   | { kind: "select"; name: string; label: string; options: FilterOption[]; allLabel?: string }
   | { kind: "date"; name: string; label: string }
+  | { kind: "search"; name: string; label: string; placeholder?: string }
   | { kind: "toggle"; name: string; label: string; value?: string };
 
 /**
@@ -63,7 +64,21 @@ export function FilterBar({ filters, keep = ["tab"] }: { filters: FilterDef[]; k
         return (
           <label key={f.name} className="flex flex-col gap-0.5">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{f.label}</span>
-            {f.kind === "select" ? (
+            {f.kind === "search" ? (
+              <input
+                key={current}
+                type="search"
+                defaultValue={current}
+                placeholder={f.placeholder}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") set(f.name, e.currentTarget.value.trim());
+                }}
+                onBlur={(e) => {
+                  if (e.currentTarget.value.trim() !== current) set(f.name, e.currentTarget.value.trim());
+                }}
+                className={cn(control, "w-48")}
+              />
+            ) : f.kind === "select" ? (
               <select value={current} onChange={(e) => set(f.name, e.target.value)} className={cn(control, "min-w-28 pr-6")}>
                 <option value="">{f.allLabel ?? "All"}</option>
                 {f.options.map((o) => {

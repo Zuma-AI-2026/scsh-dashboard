@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { NoAccess } from "@/components/app-shell/section-page";
 import { KpiStrip } from "@/components/sales/kpi-strip";
+import { RotationTab } from "@/components/sales/rotation-tab";
 import { TabNav } from "@/components/sales/tab-nav";
 import { ApplicationsTab, LeadsTab, PipelineTab, ShowingsTab, UnitsTab } from "@/components/sales/tabs";
 import { requireSection } from "@/lib/auth/current-user";
 import { sectionByKey } from "@/lib/auth/roles";
+import { loadLeadsDataset } from "@/lib/leads/data";
 import { computeKpis } from "@/lib/sales/analytics";
 import { loadSalesDataset } from "@/lib/sales/data";
 import { SALES_TABS, type SalesTab } from "@/lib/sales/types";
@@ -31,6 +33,7 @@ export default async function SalesPage({ searchParams }: PageProps<"/sales">) {
   const now = new Date();
 
   const data = await loadSalesDataset();
+  const leads = await loadLeadsDataset(data, now);
   const { season, week, kpis } = computeKpis(data, now);
 
   const counts = {
@@ -39,7 +42,7 @@ export default async function SalesPage({ searchParams }: PageProps<"/sales">) {
     showings: data.showings.length,
     applications: data.applications.length,
   };
-  const tabProps = { data, params, season, week, now };
+  const tabProps = { data, leads, params, season, week, now };
 
   return (
     <div className="space-y-4">
@@ -59,6 +62,7 @@ export default async function SalesPage({ searchParams }: PageProps<"/sales">) {
       {tab === "showings" && <ShowingsTab {...tabProps} />}
       {tab === "applications" && <ApplicationsTab {...tabProps} />}
       {tab === "pipeline" && <PipelineTab {...tabProps} />}
+      {tab === "rotation" && <RotationTab leads={leads} params={params} now={now} />}
     </div>
   );
 }

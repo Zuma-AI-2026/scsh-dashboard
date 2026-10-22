@@ -50,6 +50,9 @@ export default async function AdminPage() {
           <Link href="/admin/users" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
             Users
           </Link>
+          <Link href="/admin/agents" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            Agents
+          </Link>
           <Link href="/admin/delinquency-ladder" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
             Ladder
           </Link>

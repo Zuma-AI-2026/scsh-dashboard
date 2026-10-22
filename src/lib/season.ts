@@ -33,8 +33,10 @@ export function laParts(date: Date): { year: number; month: number; day: number 
 
 /** Midnight (LA) on a calendar date, as an absolute instant. */
 export function laDate(year: number, month: number, day: number): Date {
-  const pst = new Date(Date.UTC(year, month - 1, day, 8, 0, 0)); // 08:00Z = 00:00 PST
-  return laParts(pst).day === day ? pst : new Date(Date.UTC(year, month - 1, day, 7, 0, 0)); // PDT
+  // 07:00Z is 00:00 PDT (same day) or 23:00 PST (previous day), so it decides the offset;
+  // 08:00Z would be 01:00 PDT — still the same day — and can't tell them apart.
+  const pdt = new Date(Date.UTC(year, month - 1, day, 7, 0, 0));
+  return laParts(pdt).day === day ? pdt : new Date(Date.UTC(year, month - 1, day, 8, 0, 0)); // PST
 }
 
 export function currentSeason(now: Date = new Date()): Season {

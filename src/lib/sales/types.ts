@@ -10,13 +10,14 @@ export type GuestCardInterest = GuestCardInterestRow & { property_name: string |
 export type Showing = ShowingRow & { property_name: string | null };
 export type Application = ApplicationRow;
 
-export type SalesTab = "units" | "leads" | "showings" | "applications" | "pipeline";
+export type SalesTab = "units" | "leads" | "showings" | "applications" | "pipeline" | "rotation";
 export const SALES_TABS: { key: SalesTab; label: string }[] = [
   { key: "units", label: "Available units" },
   { key: "leads", label: "Leads" },
   { key: "showings", label: "Showings" },
   { key: "applications", label: "Applications" },
   { key: "pipeline", label: "Pipeline" },
+  { key: "rotation", label: "Rotation" },
 ];
 
 /*
