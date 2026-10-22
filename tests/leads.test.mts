@@ -6,11 +6,11 @@ import {
   applyEngagement,
   effectiveStage,
   identityOf,
+  initialOwner,
   matchLead,
   normalizeEmail,
   normalizePhone,
   ownerMismatch,
-  ownerOnFirstImport,
   pickRotationAgent,
   rotationFor,
   stageForApplication,
@@ -116,17 +116,25 @@ describe("rotation choice", () => {
   });
 });
 
-describe("first import ownership", () => {
+describe("owner of a new lead", () => {
   const named = [
     { id: JEN, name: "Jennifer", appfolio_name: "Jennifer Villanueva", active: true },
     { id: ARI, name: "Arianne", appfolio_name: "Arianne Quinto", active: true },
   ];
-  it("AppFolio's assigned user wins with no turn when it is an active agent", () => {
-    assert.deepEqual(ownerOnFirstImport(named, "jennifer villanueva"), { via: "appfolio", agent_id: JEN });
+  const GO_LIVE = daysAgo(10);
+  const before = daysAgo(40);
+  const after = daysAgo(2);
+  it("AppFolio's assigned user wins with no turn when it is an active agent, before or after go-live", () => {
+    assert.deepEqual(initialOwner(named, "jennifer villanueva", before, GO_LIVE), { via: "appfolio", agent_id: JEN });
+    assert.deepEqual(initialOwner(named, "Arianne Quinto", after, GO_LIVE), { via: "appfolio", agent_id: ARI });
   });
-  it("former or unknown AppFolio users go to rotation", () => {
-    assert.deepEqual(ownerOnFirstImport(named, "Robert Tapel (Hidden)"), { via: "rotation" });
-    assert.deepEqual(ownerOnFirstImport(named, null), { via: "rotation" });
+  it("before go-live, anyone else's lead stays unassigned (no turn)", () => {
+    assert.deepEqual(initialOwner(named, "Robert Tapel (Hidden)", before, GO_LIVE), { via: "unassigned" });
+    assert.deepEqual(initialOwner(named, null, before, GO_LIVE), { via: "unassigned" });
+  });
+  it("after go-live, former or unknown AppFolio users go to rotation", () => {
+    assert.deepEqual(initialOwner(named, "Robert Tapel (Hidden)", after, GO_LIVE), { via: "rotation" });
+    assert.deepEqual(initialOwner(named, null, after, GO_LIVE), { via: "rotation" });
   });
   it("an inactive agent's name does not claim ownership", () => {
     assert.equal(agentForAppfolioUser([{ ...named[0], active: false }], "Jennifer Villanueva"), null);

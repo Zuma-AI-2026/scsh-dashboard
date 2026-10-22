@@ -25,7 +25,7 @@ export type ReportOutcome = {
 };
 
 export type TableOutcome = {
-  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies" | "tenant_contacts";
+  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies" | "tenant_contacts" | "leads";
   status: "success" | "error" | "skipped";
   written: number;
   note?: string;
@@ -205,6 +205,13 @@ export async function syncSales(): Promise<SalesSyncResult> {
     });
   }
 
+  // Leads are derived from the tables above; a failed guest_cards pull would
+  // look like "no new inquiries", so skip rather than import a partial picture.
+  const guestCardsWritten = tables.some((t) => t.table === "guest_cards" && t.status === "success");
+  tables.push(
+    guestCardsWritten ? await importLeads(admin) : { table: "leads", status: "skipped", written: 0, note: "guest_cards not written this run" },
+  );
+
   // 3. Record state.
   const finished = new Date();
   const anyError = reports.some((r) => r.status === "error") || tables.some((t) => t.status === "error");
@@ -250,6 +257,36 @@ async function writeGuestCards(admin: SupabaseClient, rows: ReportRow[], syncedA
     interestsOut.note = `${interests.length} interests (nothing dropped)`;
   }
   return [peopleOut, interestsOut];
+}
+
+type LeadImportSummary = {
+  leads_created: number;
+  guest_cards_linked_to_existing: number;
+  guest_cards_rejected: number;
+  inquiry_events: number;
+  showing_events: number;
+  leads_with_applications: number;
+  applications_unlinked: number;
+};
+
+async function importLeads(admin: SupabaseClient): Promise<TableOutcome> {
+  const { data, error } = await admin.rpc("import_leads_from_appfolio");
+  if (error) return { table: "leads", status: "error", written: 0, error: `import_leads_from_appfolio: ${error.message}` };
+  const s = data as LeadImportSummary;
+  return {
+    table: "leads",
+    status: "success",
+    written: s.leads_created,
+    note: [
+      `${s.leads_created} new leads`,
+      `${s.guest_cards_linked_to_existing} cards joined existing leads`,
+      `${s.inquiry_events} inquiries`,
+      `${s.showing_events} showings`,
+      `${s.leads_with_applications} leads with applications`,
+      `${s.guest_cards_rejected} cards without email/phone`,
+      `${s.applications_unlinked} applications without a guest card`,
+    ].join("; "),
+  };
 }
 
 async function writeTenantContacts(admin: SupabaseClient, directory: ReportRow[], delinquency: ReportRow[], syncedAt: string): Promise<TableOutcome> {

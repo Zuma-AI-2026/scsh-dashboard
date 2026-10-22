@@ -155,13 +155,19 @@ export function agentForAppfolioUser(agents: NamedAgent[], assignedUser: string 
   return agents.find((a) => a.active && (sameName(a.appfolio_name, assignedUser) || sameName(a.name, assignedUser))) ?? null;
 }
 
+export type InitialOwner = { via: "appfolio"; agent_id: number } | { via: "unassigned" } | { via: "rotation" };
+
 /**
- * First import only: AppFolio's assigned user wins if it's an active agent
- * (no turn consumed); otherwise the lead goes to rotation.
+ * Owner of a brand-new lead (mirrors SQL `assign_new_lead`):
+ *  1. AppFolio's assigned user is an active agent → they own it, no turn;
+ *  2. first seen before go-live → nobody owns it, no turn (admin bulk-assigns);
+ *  3. otherwise rotation.
  */
-export function ownerOnFirstImport(agents: NamedAgent[], assignedUser: string | null | undefined): { via: "appfolio"; agent_id: number } | { via: "rotation" } {
+export function initialOwner(agents: NamedAgent[], assignedUser: string | null | undefined, firstSeenAt: string, goLiveAt: string): InitialOwner {
   const hit = agentForAppfolioUser(agents, assignedUser);
-  return hit ? { via: "appfolio", agent_id: hit.id } : { via: "rotation" };
+  if (hit) return { via: "appfolio", agent_id: hit.id };
+  if (Date.parse(firstSeenAt) < Date.parse(goLiveAt)) return { via: "unassigned" };
+  return { via: "rotation" };
 }
 
 /** Mirrors the leads_set_owner_mismatch trigger. Inactive agents still count as a name match. */
