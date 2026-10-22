@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { OwnerCell, StageBadge } from "@/components/leads/badges";
-import { conversionByOwner, filterRotation, formatPhone, leadRange, ROTATION_DEFAULT_DAYS, turnsInRange, type RotationRow } from "@/lib/leads/analytics";
+import { channelLabel, conversionByOwner, filterRotation, formatPhone, isListed, leadRange, ROTATION_DEFAULT_DAYS, turnsInRange, type RotationRow } from "@/lib/leads/analytics";
 import type { LeadsDataset } from "@/lib/leads/data";
 import type { Rotation } from "@/lib/leads/rules";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -34,7 +34,7 @@ export function RotationTab({ leads, params, now }: { leads: LeadsDataset | null
   if (!leads) {
     return (
       <p className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
-        Lead rotation isn&apos;t set up yet. Run migrations 0008 – 0011 in Supabase, then sync once.
+        Lead rotation isn&apos;t set up yet. Run migrations 0008 – 0012 in Supabase, then sync once.
       </p>
     );
   }
@@ -64,6 +64,22 @@ export function RotationTab({ leads, params, now }: { leads: LeadsDataset | null
     render: (r) => <span className="font-medium">{text(r.name ?? r.email_norm)}</span>,
   };
   const ownerCol: Column<RotationRow> = { key: "owner_name", label: "Owner", sortable: true, render: (r) => <OwnerCell lead={r} /> };
+  const channelCol: Column<RotationRow> = {
+    key: "channel",
+    label: "Channel",
+    sortable: true,
+    render: (r) => (
+      <span title={r.source_first ?? "No source"} className={r.channel === "other" ? dim : undefined}>
+        {channelLabel(r.channel)}
+      </span>
+    ),
+  };
+  const propertyCol: Column<RotationRow> = { key: "property_name", label: "Property", sortable: true, render: (r) => text(r.property_name) };
+  const stageCol: Column<RotationRow> = { key: "stage_now", label: "Stage", sortable: true, render: (r) => <StageBadge stage={r.stage_now} /> };
+  const flagCols: Column<RotationRow>[] = [
+    { key: "tour_booked", label: "Tour", sortable: true, render: (r) => yes(r.tour_booked) },
+    { key: "application_status", label: "Application", sortable: true, render: (r) => (r.application_status ? <StatusBadge value={r.application_status} /> : r.has_application ? "Yes" : text(null)) },
+  ];
 
   const columns: Column<RotationRow>[] =
     rotation === "A"
@@ -71,7 +87,7 @@ export function RotationTab({ leads, params, now }: { leads: LeadsDataset | null
           dateCol,
           nameCol,
           { key: "phone_norm", label: "Phone", render: (r) => text(formatPhone(r.phone_norm)) },
-          { key: "property_name", label: "Property", sortable: true, render: (r) => text(r.property_name) },
+          propertyCol,
           {
             key: "pq_score",
             label: "Score / tier",
@@ -80,19 +96,24 @@ export function RotationTab({ leads, params, now }: { leads: LeadsDataset | null
             render: (r) => (r.pq_score === null && !r.pq_tier ? text(null) : <span>{r.pq_score ?? "—"}{r.pq_tier && <span className={cn("ml-1", dim)}>· {r.pq_tier}</span>}</span>),
           },
           ownerCol,
+          channelCol,
+          stageCol,
           { key: "converted_from_b", label: "From B", sortable: true, render: (r) => (r.converted_from_b ? <span className="text-primary">Converted</span> : <span className={dim}>—</span>) },
-          { key: "tour_booked", label: "Tour", sortable: true, render: (r) => yes(r.tour_booked) },
-          { key: "application_status", label: "Application", sortable: true, render: (r) => (r.application_status ? <StatusBadge value={r.application_status} /> : r.has_application ? "Yes" : text(null)) },
+          ...flagCols,
         ]
       : [
           dateCol,
           nameCol,
           ownerCol,
-          { key: "source_first", label: "Source", sortable: true, render: (r) => text(r.source_first) },
-          { key: "property_name", label: "Property", sortable: true, render: (r) => text(r.property_name) },
-          { key: "stage_now", label: "Stage", sortable: true, render: (r) => <StageBadge stage={r.stage_now} /> },
+          channelCol,
+          propertyCol,
+          stageCol,
+          ...flagCols,
           { key: "last_event_at", label: "Last activity", sortable: true, render: (r) => formatDate(r.last_event_at) },
         ];
+  const channelOptions = [...new Set(leads.leads.filter(isListed).map((l) => l.channel))]
+    .sort((a, b) => channelLabel(a).localeCompare(channelLabel(b)))
+    .map((c) => ({ value: c, label: channelLabel(c) }));
 
   const tabLink = (rot: Rotation, label: string, count: number) => {
     const active = rot === rotation;
@@ -145,6 +166,7 @@ export function RotationTab({ leads, params, now }: { leads: LeadsDataset | null
             { kind: "date", name: "to", label: "To" },
             { kind: "search", name: "q", label: "Search", placeholder: "Name, email or phone" },
             { kind: "select", name: "agent", label: "Owner", options: agentOptions },
+            { kind: "select", name: "channel", label: "Channel", options: channelOptions },
             { kind: "toggle", name: "mismatch", label: "Owner ≠ AppFolio" },
           ]}
         />

@@ -273,12 +273,15 @@ async function importLeads(admin: SupabaseClient): Promise<TableOutcome> {
   const { data, error } = await admin.rpc("import_leads_from_appfolio");
   if (error) return { table: "leads", status: "error", written: 0, error: `import_leads_from_appfolio: ${error.message}` };
   const s = data as LeadImportSummary;
+  // Post-go-live leads still without an owner (e.g. nobody was active) get rotated here.
+  const sweep = await admin.rpc("assign_unowned_leads");
   return {
     table: "leads",
     status: "success",
     written: s.leads_created,
     note: [
       `${s.leads_created} new leads`,
+      sweep.error ? `unowned sweep skipped: ${sweep.error.message}` : `${sweep.data as number} unowned leads rotated`,
       `${s.guest_cards_linked_to_existing} cards joined existing leads`,
       `${s.inquiry_events} inquiries`,
       `${s.showing_events} showings`,

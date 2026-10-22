@@ -159,15 +159,14 @@ export type InitialOwner = { via: "appfolio"; agent_id: number } | { via: "unass
 
 /**
  * Owner of a brand-new lead (mirrors SQL `assign_new_lead`):
- *  1. AppFolio's assigned user is an active agent → they own it, no turn;
- *  2. first seen before go-live → nobody owns it, no turn (admin bulk-assigns);
- *  3. otherwise rotation.
+ *  - first seen after go-live → rotation, whatever AppFolio says;
+ *  - before go-live, AppFolio's assigned user is an active agent → they own it, no turn;
+ *  - otherwise nobody owns it, no turn (admin bulk-assigns).
  */
 export function initialOwner(agents: NamedAgent[], assignedUser: string | null | undefined, firstSeenAt: string, goLiveAt: string): InitialOwner {
+  if (Date.parse(firstSeenAt) >= Date.parse(goLiveAt)) return { via: "rotation" };
   const hit = agentForAppfolioUser(agents, assignedUser);
-  if (hit) return { via: "appfolio", agent_id: hit.id };
-  if (Date.parse(firstSeenAt) < Date.parse(goLiveAt)) return { via: "unassigned" };
-  return { via: "rotation" };
+  return hit ? { via: "appfolio", agent_id: hit.id } : { via: "unassigned" };
 }
 
 /** Mirrors the leads_set_owner_mismatch trigger. Inactive agents still count as a name match. */

@@ -52,6 +52,40 @@ export function rotationDate(l: LeadView, rotation: Rotation): string {
   return rotation === "A" ? (l.qualified_at ?? l.first_seen_at) : l.first_seen_at;
 }
 
+const CHANNEL_LABEL: Record<string, string> = {
+  website_form: "Website form",
+  inbox_zillow: "Inbox · Zillow",
+  inbox_offcampus_universe: "Inbox · Offcampus-Universe",
+  inbox_och101: "Inbox · OCH 101",
+  inbox_apartments: "Inbox · Apartments.com",
+  inbox_email: "Inbox · Email",
+  phone: "Phone",
+  whatsapp: "WhatsApp",
+  social: "Social",
+  referral: "Referral",
+  other: "Other",
+};
+
+const FEED_LABEL: Record<string, string> = {
+  appfolio_website: "AppFolio website",
+  rent_com: "Rent.com",
+  apartments_com: "Apartments.com",
+  realtor_com: "Realtor.com",
+  apartment_list: "Apartment List",
+  apartment_advisor: "Apartment Advisor",
+  everyapartment: "EveryApartment",
+};
+
+/** "feed_zillow" → "Feed · Zillow". */
+export function channelLabel(channel: string): string {
+  if (CHANNEL_LABEL[channel]) return CHANNEL_LABEL[channel];
+  if (channel.startsWith("feed_")) {
+    const site = channel.slice(5);
+    return `Feed · ${FEED_LABEL[site] ?? site.charAt(0).toUpperCase() + site.slice(1).replace(/_/g, " ")}`;
+  }
+  return channel;
+}
+
 export type RotationRow = LeadView & { date: string };
 
 export function filterRotation(leads: LeadView[], rotation: Rotation, p: Params, range: LeadRange): RotationRow[] {
@@ -65,6 +99,7 @@ export function filterRotation(leads: LeadView[], rotation: Rotation, p: Params,
       if (p.agent === "none" && l.owner_agent_id !== null) return false;
       if (p.agent && p.agent !== "none" && String(l.owner_agent_id) !== p.agent) return false;
       if (p.mismatch === "1" && !l.owner_mismatch) return false;
+      if (p.channel && l.channel !== p.channel) return false;
       if (!q) return true;
       return (
         (l.name ?? "").toLowerCase().includes(q) ||
@@ -134,14 +169,15 @@ export function toCsv(header: string[], rows: Cell[][]): string {
 }
 
 export function rotationCsv(rows: RotationRow[], rotation: Rotation): string {
+  const application = (r: RotationRow) => r.application_status ?? (r.has_application ? "yes" : "");
   if (rotation === "A") {
     return toCsv(
-      ["date", "name", "phone", "email", "property", "score", "tier", "owner", "converted_from_b", "tour_booked", "application", "owner_mismatch", "appfolio_user"],
-      rows.map((r) => [r.date, r.name, formatPhone(r.phone_norm), r.email_norm, r.property_name, r.pq_score, r.pq_tier, r.owner_name ?? "Unassigned", r.converted_from_b, r.tour_booked, r.application_status ?? (r.has_application ? "yes" : ""), r.owner_mismatch, r.appfolio_assigned_user]),
+      ["date", "name", "phone", "email", "property", "score", "tier", "owner", "channel", "source", "stage", "converted_from_b", "tour_booked", "application", "owner_mismatch", "appfolio_user"],
+      rows.map((r) => [r.date, r.name, formatPhone(r.phone_norm), r.email_norm, r.property_name, r.pq_score, r.pq_tier, r.owner_name ?? "Unassigned", r.channel, r.source_first, r.stage_now, r.converted_from_b, r.tour_booked, application(r), r.owner_mismatch, r.appfolio_assigned_user]),
     );
   }
   return toCsv(
-    ["date", "name", "phone", "email", "owner", "source", "property", "stage", "owner_mismatch", "appfolio_user"],
-    rows.map((r) => [r.date, r.name, formatPhone(r.phone_norm), r.email_norm, r.owner_name ?? "Unassigned", r.source_first, r.property_name, r.stage_now, r.owner_mismatch, r.appfolio_assigned_user]),
+    ["date", "name", "phone", "email", "owner", "channel", "source", "property", "stage", "last_activity", "tour_booked", "application", "owner_mismatch", "appfolio_user"],
+    rows.map((r) => [r.date, r.name, formatPhone(r.phone_norm), r.email_norm, r.owner_name ?? "Unassigned", r.channel, r.source_first, r.property_name, r.stage_now, r.last_event_at, r.tour_booked, application(r), r.owner_mismatch, r.appfolio_assigned_user]),
   );
 }

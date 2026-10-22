@@ -124,9 +124,12 @@ describe("owner of a new lead", () => {
   const GO_LIVE = daysAgo(10);
   const before = daysAgo(40);
   const after = daysAgo(2);
-  it("AppFolio's assigned user wins with no turn when it is an active agent, before or after go-live", () => {
+  it("before go-live, AppFolio's assigned user owns it with no turn when it is an active agent", () => {
     assert.deepEqual(initialOwner(named, "jennifer villanueva", before, GO_LIVE), { via: "appfolio", agent_id: JEN });
-    assert.deepEqual(initialOwner(named, "Arianne Quinto", after, GO_LIVE), { via: "appfolio", agent_id: ARI });
+    assert.deepEqual(initialOwner(named, "Arianne Quinto", before, GO_LIVE), { via: "appfolio", agent_id: ARI });
+  });
+  it("after go-live, rotation runs even when AppFolio names an active agent", () => {
+    assert.deepEqual(initialOwner(named, "Arianne Quinto", after, GO_LIVE), { via: "rotation" });
   });
   it("before go-live, anyone else's lead stays unassigned (no turn)", () => {
     assert.deepEqual(initialOwner(named, "Robert Tapel (Hidden)", before, GO_LIVE), { via: "unassigned" });

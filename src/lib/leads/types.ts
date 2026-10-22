@@ -40,10 +40,13 @@ export type LeadRecord = {
   property_name: string | null;
   pq_score: number | null;
   pq_tier: string | null;
+  /** From source_first via lead_source_channels (0012); missing before that migration. */
+  channel?: string;
 };
 
 /** A lead plus what the views show next to it. */
 export type LeadView = LeadRecord & {
+  channel: string;
   owner_name: string | null;
   /** First form or application event — when the lead became an A lead. */
   qualified_at: string | null;

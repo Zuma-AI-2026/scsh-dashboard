@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { conversionByOwner, filterRotation, formatPhone, leadRange, rotationCsv, toCsv, turnsInRange } from "../src/lib/leads/analytics.ts";
+import { channelLabel, conversionByOwner, filterRotation, formatPhone, leadRange, rotationCsv, toCsv, turnsInRange } from "../src/lib/leads/analytics.ts";
 import type { Agent, LeadView } from "../src/lib/leads/types.ts";
 
 const NOW = new Date("2026-10-22T18:00:00Z"); // 11:00 in Los Angeles
@@ -18,7 +18,7 @@ function lead(over: Partial<LeadView>): LeadView {
     stage: "new", status: "active", duplicate_of_lead_id: null, appfolio_assigned_user: null, owner_mismatch: false, assigned_via: null,
     assigned_at: null, turn_agent_id: null, turn_rotation: null, turn_at: null, last_event_at: null, appfolio_status: null,
     property_name: null, pq_score: null, pq_tier: null, owner_name: null, qualified_at: null, tour_booked: false,
-    application_status: null, stage_now: "new", ...over,
+    application_status: null, stage_now: "new", channel: "other", ...over,
   };
 }
 const turn = (agent: number, rotation: "A" | "B", at: string, over: Partial<LeadView> = {}) =>
@@ -98,11 +98,25 @@ describe("CSV", () => {
   });
   it("exports the A columns with owner fallback", () => {
     const csv = rotationCsv([{ ...lead({ rotation: "A", name: "Ann", phone_norm: "3105550123", converted_from_b: true }), date: "2026-10-10" }], "A");
-    assert.match(csv, /^date,name,phone,email,property,score,tier,owner,converted_from_b,tour_booked/);
-    assert.match(csv, /2026-10-10,Ann,\(310\) 555-0123,,,,,Unassigned,yes,no/);
+    assert.match(csv, /^date,name,phone,email,property,score,tier,owner,channel,source,stage,converted_from_b,tour_booked/);
+    assert.match(csv, /2026-10-10,Ann,\(310\) 555-0123,,,,,Unassigned,other,Zillow,new,yes,no/);
   });
   it("formats US and international phones", () => {
     assert.equal(formatPhone("3105550123"), "(310) 555-0123");
     assert.equal(formatPhone("442079460958"), "+442079460958");
+  });
+});
+
+describe("channels", () => {
+  it("labels known channels and any feed site", () => {
+    assert.equal(channelLabel("inbox_och101"), "Inbox · OCH 101");
+    assert.equal(channelLabel("feed_rent_com"), "Feed · Rent.com");
+    assert.equal(channelLabel("feed_new_site"), "Feed · New site");
+  });
+  it("filters the rotation list by channel", () => {
+    const range = leadRange({}, NOW);
+    const z = lead({ channel: "inbox_zillow" });
+    const f = lead({ channel: "feed_zillow" });
+    assert.deepEqual(filterRotation([z, f], "B", { channel: "inbox_zillow" }, range).map((r) => r.id), [z.id]);
   });
 });

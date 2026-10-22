@@ -98,6 +98,7 @@ export async function loadLeadsDataset(sales: SalesDataset | null, now = new Dat
 
   const leads: LeadView[] = records.map((r) => ({
     ...r,
+    channel: r.channel ?? "other",
     owner_name: r.owner_agent_id === null ? null : (agentName.get(r.owner_agent_id) ?? null),
     qualified_at: qualifiedAt.get(r.id) ?? null,
     tour_booked: toured.has(r.id),
