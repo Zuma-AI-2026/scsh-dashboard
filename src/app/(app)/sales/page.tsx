@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { NoAccess } from "@/components/app-shell/section-page";
+import { ActivityTab } from "@/components/sales/activity-tab";
 import { KpiStrip } from "@/components/sales/kpi-strip";
 import { RotationTab } from "@/components/sales/rotation-tab";
 import { TabNav } from "@/components/sales/tab-nav";
@@ -63,6 +64,7 @@ export default async function SalesPage({ searchParams }: PageProps<"/sales">) {
       {tab === "applications" && <ApplicationsTab {...tabProps} />}
       {tab === "pipeline" && <PipelineTab {...tabProps} />}
       {tab === "rotation" && <RotationTab leads={leads} params={params} now={now} />}
+      {tab === "activity" && <ActivityTab leads={leads} params={params} now={now} />}
     </div>
   );
 }

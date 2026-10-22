@@ -19,7 +19,7 @@ function ymd(y: number, m: number, d: number): string {
 }
 
 /** Calendar-day arithmetic on YYYY-MM-DD (no time zone involved). */
-function addDays(day: string, n: number): string {
+export function addDays(day: string, n: number): string {
   const [, y, m, d] = day.match(YMD)!;
   const t = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d) + n));
   return ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
@@ -30,11 +30,11 @@ function laMidnight(day: string): Date {
   return laDate(Number(y), Number(m), Number(d));
 }
 
-/** ?from / ?to as LA calendar days (inclusive); default = the last 30 days. */
-export function leadRange(p: Params, now: Date): LeadRange {
+/** ?from / ?to as LA calendar days (inclusive); default = the last `defaultDays` days. */
+export function leadRange(p: Params, now: Date, defaultDays = ROTATION_DEFAULT_DAYS): LeadRange {
   const today = laParts(now);
   const to = p.to && YMD.test(p.to) ? p.to : ymd(today.year, today.month, today.day);
-  const from = p.from && YMD.test(p.from) ? p.from : addDays(to, -(ROTATION_DEFAULT_DAYS - 1));
+  const from = p.from && YMD.test(p.from) ? p.from : addDays(to, -(defaultDays - 1));
   return { from, to, start: laMidnight(from), end: laMidnight(addDays(to, 1)) };
 }
 
@@ -54,6 +54,10 @@ export function rotationDate(l: LeadView, rotation: Rotation): string {
 
 const CHANNEL_LABEL: Record<string, string> = {
   website_form: "Website form",
+  website_search: "Website · Google search",
+  application_link: "Application link",
+  signage: "Signage / banner",
+  ads: "Ads",
   inbox_zillow: "Inbox · Zillow",
   inbox_offcampus_universe: "Inbox · Offcampus-Universe",
   inbox_och101: "Inbox · OCH 101",
@@ -74,6 +78,10 @@ const FEED_LABEL: Record<string, string> = {
   apartment_list: "Apartment List",
   apartment_advisor: "Apartment Advisor",
   everyapartment: "EveryApartment",
+  homes_com: "Homes.com",
+  renthop: "RentHop",
+  mls: "MLS",
+  nup: "NUP Off-Campus-Housing",
 };
 
 /** "feed_zillow" → "Feed · Zillow". */
