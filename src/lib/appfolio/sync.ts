@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { AppfolioError, type ReportRow } from "./client";
 import { mapApplication } from "./mappers/applications";
 import { leaseByOccupancy, mapDelinquency, oldestInvoiceByOccupancy, type DelinquencyRow } from "./mappers/delinquency";
+import { mapGuestCardFlags } from "./mappers/guest-card-flags";
 import { mapGuestCards } from "./mappers/guest-cards";
 import { mapTenantContact, occupancyIdsFromDelinquency } from "./mappers/tenant-contacts";
 import { mapProperty } from "./mappers/properties";
@@ -25,7 +26,7 @@ export type ReportOutcome = {
 };
 
 export type TableOutcome = {
-  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies" | "tenant_contacts" | "leads";
+  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies" | "tenant_contacts" | "leads" | "guest_card_flags";
   status: "success" | "error" | "skipped";
   written: number;
   note?: string;
@@ -177,6 +178,7 @@ export async function syncSales(): Promise<SalesSyncResult> {
 
   if (ok("guest_cards")) {
     tables.push(...(await writeGuestCards(admin, pulled.get("guest_cards")!, startedAt)));
+    tables.push(await writeGuestCardFlags(admin, pulled.get("guest_cards")!, startedAt));
   } else {
     tables.push({ table: "guest_cards", status: "skipped", written: 0, note: "guest_cards failed" });
     tables.push({ table: "guest_card_interests", status: "skipped", written: 0, note: "guest_cards failed" });
@@ -263,6 +265,16 @@ async function writeGuestCards(admin: SupabaseClient, rows: ReportRow[], syncedA
   return [peopleOut, interestsOut];
 }
 
+/** Only the "Property unresolved:" note line; skipped (not an error) until migration 0015 exists. */
+async function writeGuestCardFlags(admin: SupabaseClient, rows: ReportRow[], syncedAt: string): Promise<TableOutcome> {
+  if ((await admin.from("guest_card_flags").select("guest_card_id").limit(1)).error) {
+    return { table: "guest_card_flags", status: "skipped", written: 0, note: "run migration 0015" };
+  }
+  const out = await replaceTable(admin, "guest_card_flags", "guest_card_id", mapGuestCardFlags(rows), syncedAt);
+  if (out.status === "success") out.note = `${out.written} cards with "Property unresolved"`;
+  return out;
+}
+
 type LeadImportSummary = {
   leads_created: number;
   guest_cards_linked_to_existing: number;
@@ -279,6 +291,7 @@ async function importLeads(admin: SupabaseClient): Promise<TableOutcome> {
   const s = data as LeadImportSummary;
   // Post-go-live leads still without an owner (e.g. nobody was active) get rotated here.
   const sweep = await admin.rpc("assign_unowned_leads");
+  const replies = await admin.rpc("mark_lead_replies");
   return {
     table: "leads",
     status: "success",
@@ -286,6 +299,7 @@ async function importLeads(admin: SupabaseClient): Promise<TableOutcome> {
     note: [
       `${s.leads_created} new leads`,
       sweep.error ? `unowned sweep skipped: ${sweep.error.message}` : `${sweep.data as number} unowned leads rotated`,
+      replies.error ? `replies skipped: ${replies.error.message}` : `${replies.data as number} leads replied`,
       `${s.guest_cards_linked_to_existing} cards joined existing leads`,
       `${s.inquiry_events} inquiries`,
       `${s.showing_events} showings`,

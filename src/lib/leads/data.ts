@@ -80,9 +80,16 @@ export async function loadLeadsDataset(sales: SalesDataset | null, now = new Dat
     if (!prev || e.at < prev) qualifiedAt.set(root, e.at);
   }
 
+  const activity = new Map<number, { date: string; type: string | null }>();
   const toured = new Set<number>();
   const latestApp = new Map<number, { status: string | null; received: string }>();
   if (sales) {
+    for (const g of sales.leads) {
+      const root = cardRoot.get(g.guest_card_id);
+      if (root === undefined || !g.last_activity_date) continue;
+      const prev = activity.get(root);
+      if (!prev || g.last_activity_date > prev.date) activity.set(root, { date: g.last_activity_date, type: g.last_activity_type });
+    }
     for (const s of sales.showings) {
       const root = s.guest_card_id === null ? undefined : cardRoot.get(s.guest_card_id);
       if (root !== undefined && !isCancelledShowing(s)) toured.add(root);
@@ -104,6 +111,8 @@ export async function loadLeadsDataset(sales: SalesDataset | null, now = new Dat
     tour_booked: toured.has(r.id),
     application_status: latestApp.get(r.id)?.status ?? null,
     stage_now: effectiveStage(r, now),
+    appfolio_last_activity: activity.get(r.id)?.date ?? null,
+    appfolio_last_activity_type: activity.get(r.id)?.type ?? null,
   }));
   const byId = new Map(leads.map((l) => [l.id, l]));
   const pick = (m: Map<number, number>) => {

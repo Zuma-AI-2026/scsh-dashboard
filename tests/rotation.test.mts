@@ -18,7 +18,7 @@ function lead(over: Partial<LeadView>): LeadView {
     stage: "new", status: "active", duplicate_of_lead_id: null, appfolio_assigned_user: null, owner_mismatch: false, assigned_via: null,
     assigned_at: null, turn_agent_id: null, turn_rotation: null, turn_at: null, last_event_at: null, appfolio_status: null,
     property_name: null, pq_score: null, pq_tier: null, owner_name: null, qualified_at: null, tour_booked: false,
-    application_status: null, stage_now: "new", channel: "other", ...over,
+    application_status: null, stage_now: "new", channel: "other", appfolio_last_activity: null, appfolio_last_activity_type: null, ...over,
   };
 }
 const turn = (agent: number, rotation: "A" | "B", at: string, over: Partial<LeadView> = {}) =>

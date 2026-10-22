@@ -50,6 +50,14 @@ function add(c: FunnelCounts, l: LeadView) {
   if (level >= 4) c.lease += 1;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-10-19" → "Oct 19" (calendar day, no time zone). */
+export function dayLabel(day: string, withYear = false): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return `${MONTHS[m - 1]} ${d}${withYear ? `, ${y}` : ""}`;
+}
+
 /** LA calendar day (YYYY-MM-DD) of a timestamp. */
 export function laDay(iso: string): string {
   const p = laParts(new Date(iso));

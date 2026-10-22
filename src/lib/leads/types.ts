@@ -42,6 +42,8 @@ export type LeadRecord = {
   pq_tier: string | null;
   /** From source_first via lead_source_channels (0012); missing before that migration. */
   channel?: string;
+  /** First prospect reply seen in AppFolio (0015); missing before that migration. */
+  replied_at?: string | null;
 };
 
 /** A lead plus what the views show next to it. */
@@ -56,6 +58,9 @@ export type LeadView = LeadRecord & {
   application_status: string | null;
   /** Stored stage, or "expired" for a B lead with no activity for 7 days. */
   stage_now: LeadStage;
+  /** Latest AppFolio activity (date, type) across the lead's guest cards — includes agent outreach. */
+  appfolio_last_activity: string | null;
+  appfolio_last_activity_type: string | null;
 };
 
 export type LeadEvent = {

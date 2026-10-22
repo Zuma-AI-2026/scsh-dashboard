@@ -64,9 +64,10 @@ export default async function AdminAgentsPage({ searchParams }: PageProps<"/admi
       </div>
 
       {!data ? (
-        <p className="rounded-md border bg-card p-4 text-sm text-muted-foreground">Run migrations 0008 – 0011 in Supabase first.</p>
+        <p className="rounded-md border bg-card p-4 text-sm text-muted-foreground">Run migrations 0008 – 0015 in Supabase first.</p>
       ) : (
         <>
+          <UnresolvedProperties data={data} />
           <nav className="flex items-center gap-1 border-b" role="tablist">
             {TABS.map((t) => {
               const count = t.key === "unassigned" ? unassignedLeads(data).length : undefined;
@@ -93,6 +94,79 @@ export default async function AdminAgentsPage({ searchParams }: PageProps<"/admi
         </>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Guest cards n8n couldn't place ("Property unresolved:" in AppFolio Notes)
+// ---------------------------------------------------------------------------
+type UnresolvedCard = {
+  guest_card_id: number;
+  note: string;
+  name: string | null;
+  received: string | null;
+  property_name: string | null;
+  status: string | null;
+};
+
+async function UnresolvedProperties({ data }: { data: LeadsDataset }) {
+  const supabase = await createSupabaseServerClient();
+  const flags = await supabase.from("guest_card_flags").select("guest_card_id, note").order("guest_card_id", { ascending: false }).limit(200);
+  if (flags.error) return null;
+  const ids = (flags.data ?? []).map((f) => f.guest_card_id as number);
+  const cards = ids.length
+    ? ((await supabase.from("guest_cards").select("guest_card_id, name, received, property_name, status").in("guest_card_id", ids)).data ?? [])
+    : [];
+  const cardById = new Map(cards.map((c) => [c.guest_card_id as number, c]));
+  const rows: UnresolvedCard[] = (flags.data ?? [])
+    .map((f) => ({ guest_card_id: f.guest_card_id as number, note: f.note as string, name: null, received: null, property_name: null, status: null, ...cardById.get(f.guest_card_id as number) }))
+    .sort((a, b) => (b.received ?? "").localeCompare(a.received ?? ""));
+
+  return (
+    <section className="rounded-md border bg-card p-3">
+      <div className="mb-1 flex items-baseline gap-2">
+        <h2 className="text-sm font-semibold">Property unresolved</h2>
+        <span className={cn("tabular rounded-sm px-1 text-[11px]", rows.length ? "bg-warning/15 text-warning" : "bg-muted")}>{rows.length}</span>
+        <span className={cn("text-xs", dim)}>Guest cards n8n couldn&apos;t place on a property. Fix the property in AppFolio and edit the note; the card leaves this list on the next sync.</span>
+      </div>
+      {rows.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className={head}>Received</TableHead>
+              <TableHead className={head}>Name</TableHead>
+              <TableHead className={head}>Note</TableHead>
+              <TableHead className={head}>AppFolio property</TableHead>
+              <TableHead className={head}>Status</TableHead>
+              <TableHead className={head}>Lead</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => {
+              const lead = data.byCard.get(r.guest_card_id);
+              return (
+                <TableRow key={r.guest_card_id}>
+                  <TableCell className={cell}>{r.received ? formatDate(r.received) : <span className={dim}>—</span>}</TableCell>
+                  <TableCell className={cn(cell, "font-medium")}>{r.name ?? <span className={dim}>Card #{r.guest_card_id}</span>}</TableCell>
+                  <TableCell className="max-w-md py-1.5 text-xs whitespace-normal">{r.note}</TableCell>
+                  <TableCell className={cell}>{r.property_name ?? <span className={dim}>—</span>}</TableCell>
+                  <TableCell className={cell}>{r.status ? <StatusBadge value={r.status} /> : <span className={dim}>—</span>}</TableCell>
+                  <TableCell className={cell}>
+                    {lead ? (
+                      <Link href={`/admin/agents?tab=leads&lead=${lead.id}`} className="inline-flex items-center gap-1.5 hover:underline">
+                        #{lead.id} <OwnerCell lead={lead} />
+                      </Link>
+                    ) : (
+                      <span className={dim}>not a lead yet</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+    </section>
   );
 }
 

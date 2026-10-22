@@ -1,4 +1,4 @@
-import { ACTIVITY_DEFAULT_DAYS, byAgent, byChannel, funnel, FUNNEL_STEPS, HISTORY_START, weekly, type AgentActivity, type ChannelRow, type WeekRow } from "@/lib/leads/activity";
+import { ACTIVITY_DEFAULT_DAYS, byAgent, dayLabel, byChannel, funnel, FUNNEL_STEPS, HISTORY_START, weekly, type AgentActivity, type ChannelRow, type WeekRow } from "@/lib/leads/activity";
 import { channelLabel, leadRange } from "@/lib/leads/analytics";
 import type { LeadsDataset } from "@/lib/leads/data";
 import { pct, type Params } from "@/lib/sales/analytics";
@@ -7,13 +7,6 @@ import { DataTable } from "./data-table";
 import { FilterBar } from "./filter-bar";
 
 const dim = "text-muted-foreground";
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "2026-10-19" → "Oct 19" (calendar day, no time zone). */
-function dayLabel(day: string, withYear = false): string {
-  const [y, m, d] = day.split("-").map(Number);
-  return `${MONTHS[m - 1]} ${d}${withYear ? `, ${y}` : ""}`;
-}
 
 function Heading({ children, aside }: { children: React.ReactNode; aside?: React.ReactNode }) {
   return (
