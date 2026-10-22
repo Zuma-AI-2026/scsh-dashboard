@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parsePqSubmission } from "../src/lib/leads/pq.ts";
+import { parseLeadInquiry, parsePqSubmission } from "../src/lib/leads/webhook-payloads.ts";
 
 const full = {
   submission_id: "pq_2026-10-22_8f3a1c",
@@ -55,5 +55,19 @@ describe("PQ payload", () => {
     const r = parsePqSubmission({ ...full, credit_score: 700 });
     assert.equal(r.ok, true);
     if (r.ok) assert.equal("credit_score" in r.value, false);
+  });
+});
+
+describe("lead inquiry payload", () => {
+  it("accepts the documented payload", () => {
+    const body = { email: "jane.doe@usc.edu", phone: "(310) 555-0123", name: "Jane Doe", source: "Zillow" };
+    assert.deepEqual(parseLeadInquiry(body), { ok: true, value: body });
+  });
+  it("every field is optional at this layer; blanks become null", () => {
+    assert.deepEqual(parseLeadInquiry({ phone: " 3105550123 ", email: "" }), { ok: true, value: { email: null, phone: "3105550123", name: null, source: null } });
+  });
+  it("rejects non-objects and wrong types", () => {
+    assert.equal(parseLeadInquiry("jane@usc.edu").ok, false);
+    assert.deepEqual(parseLeadInquiry({ email: ["a@b.co"] }), { ok: false, error: "email must be a string" });
   });
 });

@@ -37,8 +37,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Everything except: cron API routes (protected by CRON_SECRET), the PQ form
-    // webhook (protected by PQ_SUBMIT_KEY), Next internals, and static assets.
-    "/((?!api/cron|api/pq-submit|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt)$).*)",
+    // Everything except: cron API routes (protected by CRON_SECRET), the n8n
+    // webhooks (protected by PQ_SUBMIT_KEY), Next internals, and static assets.
+    "/((?!api/cron|api/pq-submit|api/leads/assign|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt)$).*)",
   ],
 };

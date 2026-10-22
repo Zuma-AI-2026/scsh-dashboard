@@ -1,6 +1,7 @@
 /**
- * POST /api/pq-submit body validation. Pure, no imports (tested by
- * tests/pq.test.mts). Unknown keys are dropped; empty strings become null.
+ * Body validation for the n8n webhooks (/api/pq-submit, /api/leads/assign).
+ * Pure, no imports (tested by tests/webhook-payloads.test.mts). Unknown keys
+ * are dropped; empty strings become null.
  */
 
 export type PqSubmission = {
@@ -75,6 +76,22 @@ export function parsePqSubmission(body: unknown): PqParseResult {
         score: number(b, "score"),
       },
     };
+  } catch (err) {
+    if (err instanceof Invalid) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+export type LeadInquiry = { email: string | null; phone: string | null; name: string | null; source: string | null };
+
+export type LeadInquiryParseResult = { ok: true; value: LeadInquiry } | { ok: false; error: string };
+
+/** /api/leads/assign. Email or phone is checked by the database (it logs the rejection). */
+export function parseLeadInquiry(body: unknown): LeadInquiryParseResult {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, error: "body must be a JSON object" };
+  const b = body as Record<string, unknown>;
+  try {
+    return { ok: true, value: { email: text(b, "email"), phone: text(b, "phone"), name: text(b, "name"), source: text(b, "source") } };
   } catch (err) {
     if (err instanceof Invalid) return { ok: false, error: err.message };
     throw err;
