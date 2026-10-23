@@ -6,6 +6,7 @@ import { mapApplication } from "./mappers/applications";
 import { leaseByOccupancy, mapDelinquency, oldestInvoiceByOccupancy, type DelinquencyRow } from "./mappers/delinquency";
 import { mapGuestCardFlags } from "./mappers/guest-card-flags";
 import { mapGuestCards } from "./mappers/guest-cards";
+import { mapOpenCharges } from "./mappers/open-charges";
 import { mapTenantContact, occupancyIdsFromDelinquency } from "./mappers/tenant-contacts";
 import { mapProperty } from "./mappers/properties";
 import { mapShowing } from "./mappers/showings";
@@ -26,7 +27,7 @@ export type ReportOutcome = {
 };
 
 export type TableOutcome = {
-  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies" | "tenant_contacts" | "leads" | "guest_card_flags";
+  table: "properties" | "units" | "guest_cards" | "guest_card_interests" | "showings" | "applications" | "delinquencies" | "tenant_contacts" | "open_charges" | "leads" | "guest_card_flags";
   status: "success" | "error" | "skipped";
   written: number;
   note?: string;
@@ -200,6 +201,12 @@ export async function syncSales(): Promise<SalesSyncResult> {
     tables.push({ table: "delinquencies", status: "skipped", written: 0, note: "delinquency failed" });
   }
 
+  if (ok("delinquency") && ok("aged_receivables_detail")) {
+    tables.push(await writeOpenCharges(admin, pulled.get("aged_receivables_detail")!, pulled.get("delinquency")!, startedAt));
+  } else {
+    tables.push({ table: "open_charges", status: "skipped", written: 0, note: !ok("delinquency") ? "delinquency failed" : "aged_receivables_detail failed" });
+  }
+
   if (ok("delinquency") && ok("tenant_directory")) {
     tables.push(await writeTenantContacts(admin, pulled.get("tenant_directory")!, pulled.get("delinquency")!, startedAt));
   } else {
@@ -310,19 +317,33 @@ async function importLeads(admin: SupabaseClient): Promise<TableOutcome> {
   };
 }
 
+/** Open invoices for delinquent occupancies; skipped (not an error) until migration 0017 exists. */
+async function writeOpenCharges(admin: SupabaseClient, aged: ReportRow[], delinquency: ReportRow[], syncedAt: string): Promise<TableOutcome> {
+  if ((await admin.from("open_charges").select("txn_id").limit(1)).error) {
+    return { table: "open_charges", status: "skipped", written: 0, note: "run migration 0017" };
+  }
+  const rows = mapOpenCharges(aged, occupancyIdsFromDelinquency(delinquency));
+  const out = await replaceTable(admin, "open_charges", "txn_id", rows as Record<string, unknown>[], syncedAt);
+  if (out.status === "success") out.note = `${rows.length} open charges`;
+  return out;
+}
+
+/** Every lease contact incl. co-signers (guarantors); tenant_type is dropped until migration 0017 exists. */
 async function writeTenantContacts(admin: SupabaseClient, directory: ReportRow[], delinquency: ReportRow[], syncedAt: string): Promise<TableOutcome> {
   const allowed = occupancyIdsFromDelinquency(delinquency);
+  const hasType = !(await admin.from("tenant_contacts").select("tenant_type").limit(1)).error;
   const seen = new Set<string>();
-  const rows: NonNullable<ReturnType<typeof mapTenantContact>>[] = [];
+  const rows: Record<string, unknown>[] = [];
   for (const raw of directory) {
     const mapped = mapTenantContact(raw, allowed);
     if (!mapped) continue;
     const key = `${mapped.occupancy_id}:${mapped.tenant_id}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    rows.push(mapped);
+    const { tenant_type, ...rest } = mapped;
+    rows.push(hasType ? { ...rest, tenant_type } : rest);
   }
-  const out = await replaceTable(admin, "tenant_contacts", "occupancy_id,tenant_id", rows as Record<string, unknown>[], syncedAt);
+  const out = await replaceTable(admin, "tenant_contacts", "occupancy_id,tenant_id", rows, syncedAt);
   if (out.status === "success") {
     out.note = `${rows.length} contacts for ${allowed.size} delinquent occupancies (from ${directory.length} tenant_directory rows)`;
   }

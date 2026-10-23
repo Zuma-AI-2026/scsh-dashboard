@@ -1,9 +1,11 @@
 import { FollowUpCell, LastActionCell } from "@/components/accounting/follow-up";
+import { RemindButton } from "@/components/accounting/reminder-composer";
 import { DataTable, type Column } from "@/components/sales/data-table";
 import type { DelinquencyView } from "@/lib/accounting/analytics";
 import { OWNER_TYPE_LABEL, type DelinquencyStage } from "@/lib/accounting/ladder";
 import { BULK_FORM_ID } from "@/lib/accounting/types";
-import { formatDate, formatMoney } from "@/lib/format";
+import { contactTooltip, notContactedFor } from "@/lib/collections/contact";
+import { formatDate, formatDateTime, formatMoney, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export function DelinquencyTable({
@@ -13,6 +15,8 @@ export function DelinquencyTable({
   showContacts,
   stages,
   bulkSelect = false,
+  canRemind = false,
+  now = new Date(),
 }: {
   rows: DelinquencyView[];
   params: Record<string, string | undefined>;
@@ -20,6 +24,9 @@ export function DelinquencyTable({
   showContacts: boolean;
   stages: DelinquencyStage[];
   bulkSelect?: boolean;
+  /** admin + accounting, once migration 0017 is applied. */
+  canRemind?: boolean;
+  now?: Date;
 }) {
   const columns: Column<DelinquencyView>[] = [];
   if (bulkSelect) {
@@ -59,6 +66,19 @@ export function DelinquencyTable({
     { key: "aging_bucket", label: "Aging", sortable: true, render: (r) => r.aging_bucket ?? "—" },
     { key: "days_past_due", label: "Days past due", sortable: true, align: "right", render: (r) => (r.days_past_due === null ? "—" : String(r.days_past_due)) },
     { key: "current_stage", label: "Stage", sortable: false, render: (r) => r.current_stage?.name ?? "—" },
+    {
+      key: "last_contacted_at",
+      label: "Last contacted",
+      sortable: true,
+      render: (r) =>
+        r.last_contact ? (
+          <span title={`${formatDateTime(r.last_contact.at)} · ${contactTooltip(r.last_contact)}`} className={cn("cursor-help whitespace-nowrap underline decoration-dotted underline-offset-2", notContactedFor(r.last_contact.at, now) && "text-warning")}>
+            {relativeTime(r.last_contact.at, now)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">never</span>
+        ),
+    },
     {
       key: "latest_action",
       label: "Last action",
@@ -104,6 +124,15 @@ export function DelinquencyTable({
     { key: "nsf", label: "NSF", sortable: true, align: "right", render: (r) => (r.nsf == null ? "—" : String(r.nsf)) },
     { key: "lease_to", label: "Lease end", sortable: true, render: (r) => formatDate(r.lease_to) },
   );
+
+  if (canRemind) {
+    columns.push({
+      key: "remind",
+      label: "",
+      sortable: false,
+      render: (r) => <RemindButton occupancyId={r.occupancy_id} tenant={r.tenant} />,
+    });
+  }
 
   if (canWrite) {
     columns.push({

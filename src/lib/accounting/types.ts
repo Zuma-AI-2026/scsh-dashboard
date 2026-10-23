@@ -15,6 +15,8 @@ export type DelinquencyAction = {
   acted_by: string;
   acted_at: string;
   stage_id: number | null;
+  /** Set when the entry was written by a payment reminder (migration 0017). */
+  collection_message_id?: number | null;
 };
 
 export type TenantContact = {
@@ -24,6 +26,7 @@ export type TenantContact = {
   phone_numbers: string | null;
   emails: string | null;
   primary_tenant: boolean | null;
+  tenant_type?: string | null;
 };
 
 export const FOLLOW_UP_ACTIONS = ["Called", "Texted", "Emailed", "Payment plan", "Notice served", "Escalated to owner"] as const;

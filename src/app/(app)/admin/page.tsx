@@ -56,6 +56,9 @@ export default async function AdminPage() {
           <Link href="/admin/delinquency-ladder" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
             Ladder
           </Link>
+          <Link href="/admin/collections" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            Collections
+          </Link>
           <Link href="/admin/properties" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
             Properties
             {pendingReview > 0 && <span className="ml-1.5 rounded-sm bg-warning/15 px-1 text-[10px] font-medium uppercase text-warning">{pendingReview} to review</span>}

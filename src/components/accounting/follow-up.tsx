@@ -5,7 +5,9 @@ import { addDelinquencyAction } from "@/app/(app)/accounting/actions";
 import { PendingButton } from "@/components/admin/pending-button";
 import type { DelinquencyStage } from "@/lib/accounting/ladder";
 import { FOLLOW_UP_ACTIONS, type DelinquencyAction } from "@/lib/accounting/types";
-import { formatDate } from "@/lib/format";
+import { formatCents } from "@/lib/collections/charges";
+import type { ReminderMessage } from "@/lib/collections/contact";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { hrefWith } from "@/lib/url";
 
 export function FollowUpCell({
@@ -96,6 +98,7 @@ export function HistoryPanel({
   property,
   unit,
   actions,
+  reminders = [],
   stages,
   closeHref,
 }: {
@@ -103,6 +106,7 @@ export function HistoryPanel({
   property: string | null;
   unit: string | null;
   actions: DelinquencyAction[];
+  reminders?: ReminderMessage[];
   stages: DelinquencyStage[];
   closeHref: string;
 }) {
@@ -138,6 +142,25 @@ export function HistoryPanel({
           ))}
         </ol>
       )}
+      {reminders.length > 0 && (
+        <div className="mt-3">
+          <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Payment reminders</h3>
+          <ul className="space-y-1 text-sm">
+            {reminders.map((m) => (
+              <li key={m.id} className="border-l-2 border-border pl-3">
+                <span className="font-medium">{m.channel === "email" ? "Email" : "Text"}</span>
+                <span className="ml-2 text-muted-foreground">
+                  {formatDateTime(m.created_at)} · {m.sender ?? m.sent_by} → {[...m.to, ...m.cc].join(", ")} · {formatCents(m.total_cents)} ·{" "}
+                  <span className={m.status === "failed" ? "text-negative" : undefined}>{REMINDER_STATUS[m.status]}</span>
+                </span>
+                {m.subject && <div className="text-muted-foreground">{m.subject}</div>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
+
+const REMINDER_STATUS: Record<ReminderMessage["status"], string> = { drafted: "Outlook draft", sent: "sent", failed: "failed", text_opened: "text opened" };

@@ -1,4 +1,5 @@
 import "server-only";
+import type { ReminderMessage } from "@/lib/collections/contact";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isOwnerType, type DelinquencyStage } from "./ladder";
 import { OCCUPIED_STATUSES, type Delinquency, type DelinquencyAction, type TenantContact } from "./types";
@@ -8,10 +9,14 @@ export type AccountingDataset = {
   actions: DelinquencyAction[];
   stages: DelinquencyStage[];
   contacts: TenantContact[];
+  messages: ReminderMessage[];
+  /** False until migration 0017 (payment reminders) is applied. */
+  remindersReady: boolean;
   occupiedManaged: number;
 };
 
 const MAX_ROWS = 10_000;
+const MESSAGE_COLUMNS = "id, created_at, sent_by, channel, occupancy_id, sender, to, cc, subject, total_cents, status";
 
 function asStages(rows: unknown[]): DelinquencyStage[] {
   const out: DelinquencyStage[] = [];
@@ -40,13 +45,22 @@ function asStages(rows: unknown[]): DelinquencyStage[] {
  */
 export async function loadAccountingDataset(): Promise<AccountingDataset> {
   const supabase = await createSupabaseServerClient();
+  // Payment-reminder columns/tables arrive with migration 0017; until then the page works without them.
+  const messagesQuery = supabase.from("collection_messages").select(MESSAGE_COLUMNS).order("created_at", { ascending: false }).limit(MAX_ROWS);
+  const actionsQuery = (extra: string) =>
+    supabase.from("delinquency_actions").select(`id, occupancy_id, action, note, acted_by, acted_at, stage_id${extra}`).order("acted_at", { ascending: false }).limit(MAX_ROWS);
+  const contactsQuery = (extra: string) => supabase.from("tenant_contacts").select(`occupancy_id, tenant_id, tenant, phone_numbers, emails, primary_tenant${extra}`).limit(MAX_ROWS);
 
-  const [delinquencies, actions, stages, contacts, units] = await Promise.all([
+  const [delinquencies, stages, units, messages] = await Promise.all([
     supabase.from("managed_delinquencies").select("*").order("amount_receivable", { ascending: false, nullsFirst: false }).limit(MAX_ROWS),
-    supabase.from("delinquency_actions").select("id, occupancy_id, action, note, acted_by, acted_at, stage_id").order("acted_at", { ascending: false }).limit(MAX_ROWS),
     supabase.from("delinquency_stages").select("id, sort_order, name, trigger_day, owner_type, action_label, message_tone, is_active").order("sort_order"),
-    supabase.from("tenant_contacts").select("occupancy_id, tenant_id, tenant, phone_numbers, emails, primary_tenant").limit(MAX_ROWS),
     supabase.from("managed_units").select("unit_id, occupancy_status").limit(MAX_ROWS),
+    messagesQuery,
+  ]);
+  const remindersReady = !messages.error;
+  const [actions, contacts] = await Promise.all([
+    actionsQuery(remindersReady ? ", collection_message_id" : ""),
+    contactsQuery(remindersReady ? ", tenant_type" : ""),
   ]);
 
   for (const r of [delinquencies, actions, stages, contacts, units]) {
@@ -57,9 +71,11 @@ export async function loadAccountingDataset(): Promise<AccountingDataset> {
 
   return {
     delinquencies: (delinquencies.data ?? []) as Delinquency[],
-    actions: (actions.data ?? []) as DelinquencyAction[],
+    actions: (actions.data ?? []) as unknown as DelinquencyAction[],
     stages: asStages(stages.data ?? []),
-    contacts: (contacts.data ?? []) as TenantContact[],
+    contacts: (contacts.data ?? []) as unknown as TenantContact[],
+    messages: remindersReady ? ((messages.data ?? []) as unknown as ReminderMessage[]) : [],
+    remindersReady,
     occupiedManaged,
   };
 }

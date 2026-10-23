@@ -9,6 +9,8 @@ export type TenantContactRow = {
   phone_numbers: string | null;
   emails: string | null;
   primary_tenant: boolean | null;
+  /** "Financially Responsible", "Co-signer" (guarantor) or "Other Occupant". */
+  tenant_type: string | null;
 };
 
 export function mapTenantContact(row: ReportRow, delinquentOccupancies: Set<number>): TenantContactRow | null {
@@ -23,6 +25,7 @@ export function mapTenantContact(row: ReportRow, delinquentOccupancies: Set<numb
     phone_numbers: str(row.phone_numbers),
     emails: str(row.emails),
     primary_tenant: bool(row.primary_tenant),
+    tenant_type: str(row.tenant_type),
   };
 }
 

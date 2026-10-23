@@ -1,4 +1,6 @@
 import { agingBucketOf, daysPastDue, type AgingBucket } from "@/lib/appfolio/mappers/delinquency";
+import { lastContactByOccupancy, notContactedFor, type LastContact } from "@/lib/collections/contact";
+import { contactKind } from "@/lib/collections/contacts";
 import { formatMoney } from "@/lib/format";
 import type { Kpi } from "@/lib/sales/analytics";
 import { hrefWith } from "@/lib/url";
@@ -17,6 +19,9 @@ export type DelinquencyView = Delinquency & {
   next_action_due: DelinquencyStage | null;
   action_overdue: boolean;
   contact: TenantContact | null;
+  last_contact: LastContact | null;
+  /** ISO time of last_contact, for sorting. */
+  last_contacted_at: string | null;
 };
 
 export function withDerived(data: AccountingDataset, now = new Date()): DelinquencyView[] {
@@ -33,9 +38,12 @@ export function withDerived(data: AccountingDataset, now = new Date()): Delinque
 
   const contactByOcc = new Map<number, TenantContact>();
   for (const c of data.contacts) {
+    if (contactKind(c.tenant_type) !== "tenant") continue;
     const prev = contactByOcc.get(c.occupancy_id);
     if (!prev || (c.primary_tenant && !prev.primary_tenant)) contactByOcc.set(c.occupancy_id, c);
   }
+
+  const lastContact = lastContactByOccupancy(data.messages, data.actions);
 
   return data.delinquencies.map((d) => {
     const days = daysPastDue(d, now);
@@ -51,6 +59,8 @@ export function withDerived(data: AccountingDataset, now = new Date()): Delinque
       next_action_due: next,
       action_overdue: isActionOverdue(next, days),
       contact: contactByOcc.get(d.occupancy_id) ?? null,
+      last_contact: lastContact.get(d.occupancy_id) ?? null,
+      last_contacted_at: lastContact.get(d.occupancy_id)?.at ?? null,
     };
   });
 }
@@ -153,8 +163,9 @@ export function activeKpi(p: Params): string | null {
 const lower = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 const eq = (a: string | null | undefined, b: string | undefined) => !b || lower(a) === lower(b);
 
-export function filterRows(rows: DelinquencyView[], p: Params): DelinquencyView[] {
+export function filterRows(rows: DelinquencyView[], p: Params, now = new Date()): DelinquencyView[] {
   return rows.filter((r) => {
+    if (p.stale === "1" && !notContactedFor(r.last_contacted_at, now)) return false;
     if (!eq(r.property_name, p.property)) return false;
     if (!eq(r.aging_bucket, p.bucket)) return false;
     if (!eq(r.agent, p.agent)) return false;

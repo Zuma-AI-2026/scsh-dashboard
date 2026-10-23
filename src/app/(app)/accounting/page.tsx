@@ -9,6 +9,8 @@ import { activeKpi, computeKpis, distinct, filterRows, historyFor, sortDelinquen
 import { loadAccountingDataset } from "@/lib/accounting/data";
 import { requireSection } from "@/lib/auth/current-user";
 import { canSeeTenantContacts, canWriteFollowUp, sectionByKey } from "@/lib/auth/roles";
+import { STALE_CONTACT_DAYS } from "@/lib/collections/contact";
+import { reminderAccess } from "@/lib/collections/request";
 import { hrefWith, flattenParams } from "@/lib/url";
 
 export const metadata: Metadata = { title: "Accounting" };
@@ -22,7 +24,8 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
   const data = await loadAccountingDataset();
   const derived = withDerived(data);
   const kpis = computeKpis(derived, data.occupiedManaged, data.stages);
-  const filtered = sortDelinquencies(filterRows(derived, params), params);
+  const now = new Date();
+  const filtered = sortDelinquencies(filterRows(derived, params, now), params);
   const canWrite = canWriteFollowUp(user.role);
   const showContacts = canSeeTenantContacts(user.role);
   const isAdmin = user.role === "admin";
@@ -60,6 +63,7 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
           { kind: "select", name: "agent", label: "Agent", options: distinct(derived, (r) => r.agent) },
           { kind: "select", name: "owner", label: "Owner", options: distinct(derived, (r) => r.owners) },
           { kind: "toggle", name: "overdue", label: "Actions overdue", value: "1" },
+          { kind: "toggle", name: "stale", label: `Not contacted in ${STALE_CONTACT_DAYS}+ days`, value: "1" },
         ]}
       />
 
@@ -69,6 +73,7 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
           property={historyRow.property_name}
           unit={historyRow.unit_name}
           actions={historyFor(data.actions, historyRow.occupancy_id)}
+          reminders={data.messages.filter((m) => m.occupancy_id === historyRow.occupancy_id)}
           stages={data.stages}
           closeHref={hrefWith("/accounting", params, { history: undefined })}
         />
@@ -76,7 +81,20 @@ export default async function AccountingPage({ searchParams }: PageProps<"/accou
 
       {isAdmin && <BulkMarkDoneBar eligible={filtered.filter((r) => r.next_action_due).length} />}
 
-      <DelinquencyTable rows={filtered} params={params} canWrite={canWrite} showContacts={showContacts} stages={data.stages} bulkSelect={isAdmin} />
+      {!data.remindersReady && reminderAccess(user.role) === "send" && (
+        <p className="text-xs text-muted-foreground">Payment reminders appear once migration 0017 is applied.</p>
+      )}
+
+      <DelinquencyTable
+        rows={filtered}
+        params={params}
+        canWrite={canWrite}
+        showContacts={showContacts}
+        stages={data.stages}
+        bulkSelect={isAdmin}
+        canRemind={data.remindersReady && reminderAccess(user.role) === "send"}
+        now={now}
+      />
     </div>
   );
 }
