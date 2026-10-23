@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/current-user";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { SelectedCharge } from "./charges";
+import { countsAsContact } from "./contact";
 import { loadReminderSetup, SetupError, type ReminderSetup } from "./data";
 import { reminderAccess, type ReminderAccess } from "./request";
 
@@ -50,8 +51,9 @@ export type ReminderLog = {
 };
 
 /**
- * One reminder → one collection_messages row, and (unless it failed) one
- * delinquency_actions row for the current stage so the Overdue badge clears.
+ * One reminder → one collection_messages row. Only a real contact (sent email,
+ * opened text) also writes one delinquency_actions row for the current stage,
+ * which clears the Overdue badge; drafts and failures don't.
  */
 export async function recordReminder(user: CurrentUser, setup: ReminderSetup, log: ReminderLog): Promise<number> {
   const supabase = await createSupabaseServerClient();
@@ -81,7 +83,7 @@ export async function recordReminder(user: CurrentUser, setup: ReminderSetup, lo
   if (error) throw new Error(`Could not log the reminder: ${error.message}`);
   const id = data.id as number;
 
-  if (log.status !== "failed") {
+  if (countsAsContact(log.status)) {
     const firstLine = log.body.split("\n").find((l) => l.trim())?.trim() ?? null;
     const { error: actionError } = await supabase.from("delinquency_actions").insert({
       occupancy_id: setup.occupancyId,

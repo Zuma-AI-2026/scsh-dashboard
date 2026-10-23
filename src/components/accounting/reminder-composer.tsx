@@ -252,7 +252,7 @@ function ComposerBody({ setup }: { setup: Setup }) {
     return (
       <div className="space-y-3">
         <p className="rounded-md border border-positive/40 bg-positive/10 px-3 py-2 text-sm text-positive">{done}</p>
-        <p className="text-xs text-muted-foreground">Logged on this row (Last contacted) and as this stage&apos;s follow-up.</p>
+        <p className="text-xs text-muted-foreground">Logged in this tenant&apos;s reminder history as a draft. It doesn&apos;t count as contacting the tenant (Last contacted and the Overdue badge stay as they are) until it is actually sent.</p>
       </div>
     );
   }
@@ -370,7 +370,7 @@ function ComposerBody({ setup }: { setup: Setup }) {
               <p className="text-sm">
                 Send {charges.length} charge{charges.length === 1 ? "" : "s"} ({formatCents(total)}) from {sender?.email} to {joinList([...toList, ...ccList])}?
               </p>
-              <p className="text-xs text-muted-foreground">For now this saves a draft in the sender&apos;s Outlook; you press Send there.</p>
+              <p className="text-xs text-muted-foreground">For now this saves a draft in the sender&apos;s Outlook; you press Send there. A draft doesn&apos;t clear the Overdue badge.</p>
               <div className="flex gap-2">
                 <Button size="sm" disabled={busy !== null} onClick={send}>
                   {busy === "send" && <Loader2 className="size-3.5 animate-spin" />}Yes, send it

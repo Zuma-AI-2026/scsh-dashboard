@@ -27,6 +27,11 @@ export type LastContact = { at: string; by: string; to: string; channel: string 
 /** Follow-up log entries that mean someone reached out to the tenant. */
 export const CONTACT_ACTIONS = new Set(["Called", "Texted", "Emailed", "Payment plan", "Notice served"]);
 
+/** Drafts (not yet sent) and failures are history only; they never count as contacting the tenant. */
+export function countsAsContact(status: ReminderMessage["status"]): boolean {
+  return status === "sent" || status === "text_opened";
+}
+
 export const REPEAT_WARNING_HOURS = 24;
 export const STALE_CONTACT_DAYS = 7;
 
@@ -37,7 +42,7 @@ function recipients(m: ReminderMessage): string {
   return all.length ? all.join(", ") : "—";
 }
 
-/** Latest contact per occupancy from reminders (not failed) and contact-type follow-up entries. */
+/** Latest contact per occupancy from sent emails / opened texts and contact-type follow-up entries. */
 export function lastContactByOccupancy(messages: ReminderMessage[], actions: LoggedAction[]): Map<number, LastContact> {
   const out = new Map<number, LastContact>();
   const offer = (occ: number, c: LastContact) => {
@@ -45,7 +50,7 @@ export function lastContactByOccupancy(messages: ReminderMessage[], actions: Log
     if (!prev || c.at > prev.at) out.set(occ, c);
   };
   for (const m of messages) {
-    if (m.status === "failed") continue;
+    if (!countsAsContact(m.status)) continue;
     offer(m.occupancy_id, {
       at: m.created_at,
       by: m.sent_by,

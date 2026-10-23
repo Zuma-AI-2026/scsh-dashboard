@@ -155,9 +155,13 @@ describe("contact timing", () => {
     assert.equal(notContactedFor("2026-10-15T19:00:00Z", NOW), true);
     assert.equal(notContactedFor("2026-10-16T19:00:00Z", NOW), false);
   });
-  it("last contact: reminders and follow-up log, one contact counted once, failures ignored", () => {
+  it("drafts and failures never count as contact", () => {
+    const last = lastContactByOccupancy([msg({ id: 4, status: "drafted" }), msg({ id: 5, status: "failed" })], []);
+    assert.equal(last.has(77), false);
+  });
+  it("last contact: sent emails, opened texts and follow-up log, one contact counted once", () => {
     const last = lastContactByOccupancy(
-      [msg({ id: 5, status: "failed", created_at: "2026-10-22T18:00:00Z" }), msg({ id: 6 })],
+      [msg({ id: 5, status: "drafted", created_at: "2026-10-22T18:00:00Z" }), msg({ id: 6, status: "sent" }), msg({ id: 7, status: "text_opened", channel: "text", occupancy_id: 99 })],
       [
         { occupancy_id: 77, action: "Emailed", acted_by: "jen@scshdev.com", acted_at: "2026-10-21T20:00:01Z", collection_message_id: 6 },
         { occupancy_id: 77, action: "Escalated to owner", acted_by: "x", acted_at: "2026-10-22T10:00:00Z" },
@@ -167,6 +171,7 @@ describe("contact timing", () => {
     assert.equal(last.get(77)?.at, "2026-10-21T20:00:00Z");
     assert.equal(last.get(77)?.to, "jane@example.com");
     assert.equal(last.get(88)?.channel, "Called (logged)");
+    assert.equal(last.get(99)?.channel, "Text (text opened)");
   });
   it("quiet hours 9 PM – 8 AM Los Angeles", () => {
     assert.equal(isTextingQuietHours(new Date("2026-10-23T04:00:00Z")), true); // 9 PM PDT
