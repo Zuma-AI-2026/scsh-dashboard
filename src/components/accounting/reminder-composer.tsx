@@ -175,7 +175,7 @@ function ComposerBody({ setup }: { setup: Setup }) {
     autoVoice: pickedTone === null && toneKey === "voice",
   };
   const [beforePolish, setBeforePolish] = useState<string | null>(null);
-  const [busy, setBusy] = useState<null | "polish" | "preview" | "send" | "text">(null);
+  const [busy, setBusy] = useState<null | "polish" | "draft" | "preview" | "send" | "text">(null);
   const [notice, setNotice] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
   const [confirmFigures, setConfirmFigures] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -223,6 +223,20 @@ function ComposerBody({ setup }: { setup: Setup }) {
     if (!r.ok) return setNotice({ tone: "error", text: r.error });
     keep(draft);
     apply(r.data.text);
+    setConfirmFigures(false);
+  }
+
+  const [confirmReplace, setConfirmReplace] = useState(false);
+
+  async function writeDraft() {
+    setConfirmReplace(false);
+    setBusy("draft");
+    setNotice(null);
+    const r = await postJson<{ text: string }>("/api/collections/draft", { occupancyId: setup.occupancyId, chargeIds: [...selected], senderId });
+    setBusy(null);
+    if (!r.ok) return setNotice({ tone: "error", text: r.error });
+    setBeforePolish(message);
+    setMessage(r.data.text);
     setConfirmFigures(false);
   }
 
@@ -341,8 +355,29 @@ function ComposerBody({ setup }: { setup: Setup }) {
               setMessage(v);
               setConfirmFigures(false);
             }}
-            placeholder="Write or dictate your message. The charges table, payment note and signature are added below it automatically."
+            placeholder="Write or dictate your message, or let “Help me write it” draft one. The charges table, payment note and signature are added below it automatically."
+            tools={
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={busy !== null || charges.length === 0}
+                onClick={() => (message.trim() ? setConfirmReplace(true) : writeDraft())}
+              >
+                {busy === "draft" && <Loader2 className="size-3 animate-spin" />}Help me write it
+              </Button>
+            }
           />
+          {confirmReplace && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm">
+              Replace your text with a new draft? (Undo brings it back.)
+              <Button size="xs" onClick={writeDraft}>
+                Replace
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => setConfirmReplace(false)}>
+                Keep mine
+              </Button>
+            </div>
+          )}
 
           <ToneRow toneKey={toneKey} customTone={customTone} onChange={chooseTone} {...toneHints}>
             <Button size="sm" variant="outline" disabled={busy !== null || charges.length === 0} onClick={() => polish("email", message, setMessage, setBeforePolish)}>
@@ -357,7 +392,7 @@ function ComposerBody({ setup }: { setup: Setup }) {
                   setBeforePolish(null);
                 }}
               >
-                Undo polish
+                Undo
               </Button>
             )}
           </ToneRow>
@@ -578,7 +613,20 @@ function recognitionCtor(): RecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-function MessageEditor({ value, onChange, placeholder, rows = 7 }: { value: string; onChange: (v: string) => void; placeholder: string; rows?: number }) {
+function MessageEditor({
+  value,
+  onChange,
+  placeholder,
+  rows = 7,
+  tools,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  rows?: number;
+  /** Extra buttons shown next to Dictate. */
+  tools?: React.ReactNode;
+}) {
   const area = useRef<HTMLTextAreaElement>(null);
   const rec = useRef<Recognition | null>(null);
   // Rendered only after a click, never on the server, so reading window here is safe.
@@ -640,11 +688,14 @@ function MessageEditor({ value, onChange, placeholder, rows = 7 }: { value: stri
     <div className="space-y-1">
       <div className="flex items-baseline justify-between">
         <span className={label}>Message</span>
-        {supported && (
-          <Button size="xs" variant={listening ? "default" : "outline"} onClick={toggleDictation}>
-            {listening ? "■ Stop dictating" : "🎤 Dictate"}
-          </Button>
-        )}
+        <div className="flex items-center gap-1">
+          {tools}
+          {supported && (
+            <Button size="xs" variant={listening ? "default" : "outline"} onClick={toggleDictation}>
+              {listening ? "■ Stop dictating" : "🎤 Dictate"}
+            </Button>
+          )}
+        </div>
       </div>
       <textarea ref={area} rows={rows} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
       {interim && <p className="text-xs italic text-muted-foreground">{interim}</p>}

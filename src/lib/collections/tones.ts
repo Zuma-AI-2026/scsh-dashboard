@@ -70,3 +70,23 @@ export function toneForStage(stage: { name: string; message_tone: string | null 
   if (stage.message_tone === "final") return "last";
   return null;
 }
+
+/** How firm a written-from-scratch draft is. Stages from owner_type human_legal never mention legal steps. */
+export type StageKind = "easy" | "personal" | "final" | "legal";
+
+export function stageKind(stage: { name: string; message_tone: string | null; owner_type?: string } | null): StageKind {
+  if (!stage) return "easy";
+  if (stage.owner_type === "human_legal") return "legal";
+  const tone = toneForStage(stage);
+  if (tone === "professional") return "personal";
+  if (tone === "last") return "final";
+  return "easy";
+}
+
+/** "Jane Doe" → "Jane"; AppFolio's "Doe, Jane" → "Jane". */
+export function firstName(name: string | null | undefined): string | null {
+  const n = (name ?? "").trim();
+  if (!n) return null;
+  const given = n.includes(",") ? n.split(",")[1].trim() : n;
+  return given.split(/\s+/)[0] || null;
+}

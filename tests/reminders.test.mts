@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { mapOpenCharges } from "../src/lib/appfolio/mappers/open-charges.ts";
-import { cleanAiText, pickAi, polishText, systemPrompt, type AiChoice, type PolishFacts } from "../src/lib/collections/ai.ts";
+import { cleanAiText, draftReminder, draftSystemPrompt, pickAi, polishText, systemPrompt, type AiChoice, type DraftFacts, type PolishFacts } from "../src/lib/collections/ai.ts";
 import { daysLate, defaultSubject, formatCents, type OpenCharge } from "../src/lib/collections/charges.ts";
-import { contactedRecently, isTextingQuietHours, lastContactByOccupancy, notContactedFor, type ReminderMessage } from "../src/lib/collections/contact.ts";
+import { contactedRecently, earlierContactPhrase, isTextingQuietHours, lastContactByOccupancy, notContactedFor, type ReminderMessage } from "../src/lib/collections/contact.ts";
 import { contactChips, defaultTo } from "../src/lib/collections/contacts.ts";
 import { renderReminderEmail } from "../src/lib/collections/email.ts";
 import { unexpectedFigures } from "../src/lib/collections/figures.ts";
 import { createDraft } from "../src/lib/collections/graph.ts";
 import { buildReminder, parseReminderRequest, reminderAccess, type ReminderContext } from "../src/lib/collections/request.ts";
-import { effectiveTone, toneDescription, toneForStage, TONES } from "../src/lib/collections/tones.ts";
+import { effectiveTone, firstName, stageKind, toneDescription, toneForStage, TONES } from "../src/lib/collections/tones.ts";
 
 const NOW = new Date("2026-10-22T19:00:00Z"); // Thu Oct 22, 12:00 PM PDT
 
@@ -355,5 +355,49 @@ describe("Keep my voice", () => {
   });
   it("strips exclamation marks the model adds anyway", () => {
     assert.equal(cleanAiText("Hi Jane! Thanks!! Really?!"), "Hi Jane. Thanks. Really?");
+  });
+});
+
+describe("Help me write it", () => {
+  const facts: DraftFacts = {
+    tenantFirstName: "Jane", propertyUnit: "2642 Ellendale Place 101", chargeCount: 2, total: "$1,375.00", oldestDaysLate: 21,
+    stageName: "Late notice", stageKind: "easy", earlierContact: null, lastPayment: "Sep 3, 2026", senderFirstName: "Jen",
+  };
+  it("stage → firmness, legal stages never mention legal steps", () => {
+    assert.equal(stageKind(null), "easy");
+    assert.equal(stageKind({ name: "Courtesy reminder", message_tone: "friendly", owner_type: "ai" }), "easy");
+    assert.equal(stageKind({ name: "Late notice", message_tone: "firm", owner_type: "ai" }), "easy");
+    assert.equal(stageKind({ name: "Personal contact", message_tone: null, owner_type: "bookkeeper" }), "personal");
+    assert.equal(stageKind({ name: "Final warning", message_tone: "final", owner_type: "bookkeeper" }), "final");
+    assert.equal(stageKind({ name: "3-day notice served", message_tone: null, owner_type: "human_legal" }), "legal");
+    assert.match(draftSystemPrompt({ ...facts, stageKind: "personal" }), /like to hear from them/);
+    assert.match(draftSystemPrompt({ ...facts, stageKind: "final" }), /next step is a formal notice/);
+    assert.match(draftSystemPrompt({ ...facts, stageKind: "legal" }), /do not mention notices, attorneys/);
+  });
+  it("voice rules, sign-off, first contact vs follow-up", () => {
+    const first = draftSystemPrompt(facts);
+    for (const s of ["4 to 7 sentences", "contractions", '"the charges listed below"', '"Thanks — Jen"', "No humor, no apology for writing, no threats", '"kindly"', '"I hope this message finds you well"', "No exclamation marks.", "first time"]) {
+      assert.ok(first.includes(s), s);
+    }
+    const follow = draftSystemPrompt({ ...facts, earlierContact: "emailed them 8 days ago (Oct 14)" });
+    assert.match(follow, /we already emailed them 8 days ago \(Oct 14\)/);
+    assert.match(follow, /I wrote last week about/);
+  });
+  it("sends the facts through the provider", async () => {
+    const { calls, impl } = mockFetch([{ status: 200, json: { content: [{ type: "text", text: "Hi Jane, …\nThanks — Jen!" }] } }]);
+    const text = await draftReminder({ provider: "anthropic", model: "claude-sonnet-5", key: "k" }, facts, impl);
+    assert.equal(text, "Hi Jane, …\nThanks — Jen.");
+    const user = JSON.parse(String(calls[0].init.body)).messages[0].content as string;
+    for (const s of ["Tenant first name: Jane", "Number of charges: 2", "Total: $1,375.00", "Oldest charge: 21 days late", "Ladder stage: Late notice", "Earlier contact: none — first contact", "Last payment: Sep 3, 2026", "Sender first name: Jen"]) {
+      assert.ok(user.includes(s), s);
+    }
+  });
+  it("names and earlier contact wording", () => {
+    assert.equal(firstName("Doe, Jane"), "Jane");
+    assert.equal(firstName("Jennifer Villanueva"), "Jennifer");
+    assert.equal(firstName(""), null);
+    assert.equal(earlierContactPhrase(null, NOW), null);
+    assert.equal(earlierContactPhrase({ at: "2026-10-14T18:00:00Z", by: "x", to: "y", channel: "Email (sent from a@b.co)" }, NOW), "emailed them 8 days ago (Oct 14)");
+    assert.equal(earlierContactPhrase({ at: "2026-10-21T18:00:00Z", by: "x", to: "tenant", channel: "Called (logged)" }, NOW), "called them yesterday (Oct 21)");
   });
 });

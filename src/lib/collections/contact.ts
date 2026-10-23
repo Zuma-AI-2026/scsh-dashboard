@@ -87,3 +87,14 @@ export function isTextingQuietHours(now: Date): boolean {
   const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", hourCycle: "h23" }).format(now));
   return hour >= 21 || hour < 8;
 }
+
+/** "emailed 8 days ago (Oct 14)" for the AI draft; null when never contacted. */
+export function earlierContactPhrase(c: LastContact | null, now: Date): string | null {
+  if (!c) return null;
+  const ch = c.channel.toLowerCase();
+  const verb = ch.startsWith("email") ? "emailed" : ch.startsWith("text") ? "texted" : ch.startsWith("called") ? "called" : "contacted";
+  const days = Math.max(0, Math.floor((now.getTime() - new Date(c.at).getTime()) / 86_400_000));
+  const when = days === 0 ? "earlier today" : days === 1 ? "yesterday" : `${days} days ago`;
+  const date = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric" }).format(new Date(c.at));
+  return `${verb} them ${when} (${date})`;
+}

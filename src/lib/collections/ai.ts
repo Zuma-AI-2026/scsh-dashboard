@@ -1,4 +1,4 @@
-import { BOILERPLATE_PHRASES, SMS_MAX } from "./tones.ts";
+import { BOILERPLATE_PHRASES, SMS_MAX, type StageKind } from "./tones.ts";
 
 /**
  * "Polish with AI" for reminders. Provider and keys come from server env only
@@ -173,8 +173,9 @@ export function cleanAiText(text: string): string {
     .trim();
 }
 
-export async function polishText(c: AiChoice, facts: PolishFacts, fetchImpl: typeof fetch = fetch): Promise<string> {
-  const { url, init } = aiRequest(c, systemPrompt(facts), userPrompt(facts));
+/** One request to the chosen provider; errors are short, user-facing messages. */
+export async function askAi(c: AiChoice, system: string, user: string, fetchImpl: typeof fetch = fetch): Promise<string> {
+  const { url, init } = aiRequest(c, system, user);
   let res: Response;
   try {
     res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(45_000) });
@@ -189,4 +190,72 @@ export async function polishText(c: AiChoice, facts: PolishFacts, fetchImpl: typ
   const text = cleanAiText(extractAiText(c.provider, await res.json().catch(() => null)));
   if (!text) throw new AiError(`${PROVIDER_NAME[c.provider]} returned no text.`);
   return text;
+}
+
+export function polishText(c: AiChoice, facts: PolishFacts, fetchImpl: typeof fetch = fetch): Promise<string> {
+  return askAi(c, systemPrompt(facts), userPrompt(facts), fetchImpl);
+}
+
+// ---------------------------------------------------------------------------
+// "Help me write it": a first draft from the row's facts
+// ---------------------------------------------------------------------------
+
+export type DraftFacts = {
+  tenantFirstName: string | null;
+  propertyUnit: string;
+  chargeCount: number;
+  total: string;
+  oldestDaysLate: number | null;
+  stageName: string | null;
+  stageKind: StageKind;
+  /** e.g. "emailed 8 days ago (Oct 14)"; null = first contact. */
+  earlierContact: string | null;
+  lastPayment: string | null;
+  senderFirstName: string;
+};
+
+const FIRMNESS: Record<StageKind, string> = {
+  easy: "easygoing and matter-of-fact; it may simply have slipped their mind",
+  personal: "a little more direct; say you'd like to hear from them about it",
+  final: "serious and plain; say clearly that if it isn't sorted out, the next step is a formal notice. No legal wording beyond that",
+  legal: "direct and plain; do not mention notices, attorneys, court or any legal step",
+};
+
+export function draftSystemPrompt(f: Pick<DraftFacts, "stageKind" | "earlierContact" | "senderFirstName">): string {
+  return [
+    "You write payment reminder emails for Southern California Student Housing (SCSH) to tenants, as the person named below.",
+    "Write like a real person: a short, plain email of 4 to 7 sentences, with contractions.",
+    "Open with a short greeting using the tenant's first name.",
+    'Say plainly that this is a reminder about their balance, state the total exactly as given ($X.XX), and refer to "the charges listed below" (the table is added automatically).',
+    "Offer one concrete next step: pay in the tenant portal, or reply if something looks wrong or they need a payment plan.",
+    `Close with a plain line: "Thanks — ${f.senderFirstName}".`,
+    "No humor, no apology for writing, no threats, no eviction or credit-reporting language.",
+    "Add no facts, fees, deadlines or promises that aren't given. The only dollar amount allowed is the total; the only date you may mention is the last payment date if given.",
+    "Plain text, no markdown, no subject line.",
+    `No corporate boilerplate: never use ${BOILERPLATE_PHRASES.map((p) => `"${p}"`).join(", ")} or similar stock phrases. No exclamation marks.`,
+    `Firmness: ${FIRMNESS[f.stageKind]}.`,
+    f.earlierContact
+      ? `This is a follow-up: we already ${f.earlierContact}. Reference it naturally, e.g. "I wrote last week about…" (use the right verb and timing).`
+      : "This is the first time we're reaching out about this balance; don't refer to earlier messages.",
+  ].join(" ");
+}
+
+export function draftUserPrompt(f: DraftFacts): string {
+  return [
+    `Tenant first name: ${f.tenantFirstName ?? "unknown (greet with just \"Hi,\")"}`,
+    `Property/unit: ${f.propertyUnit || "unknown"}`,
+    `Number of charges: ${f.chargeCount}`,
+    `Total: ${f.total}`,
+    `Oldest charge: ${f.oldestDaysLate === null ? "unknown" : `${f.oldestDaysLate} days late`}`,
+    `Ladder stage: ${f.stageName ?? "none"}`,
+    `Earlier contact: ${f.earlierContact ?? "none — first contact"}`,
+    `Last payment: ${f.lastPayment ?? "unknown"}`,
+    `Sender first name: ${f.senderFirstName}`,
+    "",
+    "Write the email body.",
+  ].join("\n");
+}
+
+export function draftReminder(c: AiChoice, facts: DraftFacts, fetchImpl: typeof fetch = fetch): Promise<string> {
+  return askAi(c, draftSystemPrompt(facts), draftUserPrompt(facts), fetchImpl);
 }

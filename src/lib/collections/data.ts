@@ -17,6 +17,7 @@ export type ReminderSetup = {
   unit: string | null;
   stage: Pick<DelinquencyStage, "id" | "name" | "owner_type" | "message_tone"> | null;
   daysPastDue: number | null;
+  lastPayment: string | null;
   openCharges: OpenCharge[];
   emailChips: ContactChip[];
   phoneChips: ContactChip[];
@@ -78,6 +79,7 @@ export async function loadReminderSetup(occupancyId: number, now = new Date()): 
     unit: d.unit_name,
     stage: stage ? { id: stage.id, name: stage.name, owner_type: stage.owner_type, message_tone: stage.message_tone } : null,
     daysPastDue: days,
+    lastPayment: d.last_payment ?? null,
     openCharges: (charges.data ?? []).map((c) => ({
       id: Number(c.txn_id),
       occupancy_id: c.occupancy_id as number,
