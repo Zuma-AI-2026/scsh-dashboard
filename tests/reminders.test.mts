@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { mapOpenCharges } from "../src/lib/appfolio/mappers/open-charges.ts";
-import { pickAi, polishText, type AiChoice, type PolishFacts } from "../src/lib/collections/ai.ts";
+import { cleanAiText, pickAi, polishText, systemPrompt, type AiChoice, type PolishFacts } from "../src/lib/collections/ai.ts";
 import { daysLate, defaultSubject, formatCents, type OpenCharge } from "../src/lib/collections/charges.ts";
 import { contactedRecently, isTextingQuietHours, lastContactByOccupancy, notContactedFor, type ReminderMessage } from "../src/lib/collections/contact.ts";
 import { contactChips, defaultTo } from "../src/lib/collections/contacts.ts";
@@ -9,7 +9,7 @@ import { renderReminderEmail } from "../src/lib/collections/email.ts";
 import { unexpectedFigures } from "../src/lib/collections/figures.ts";
 import { createDraft } from "../src/lib/collections/graph.ts";
 import { buildReminder, parseReminderRequest, reminderAccess, type ReminderContext } from "../src/lib/collections/request.ts";
-import { toneForStage } from "../src/lib/collections/tones.ts";
+import { effectiveTone, toneDescription, toneForStage, TONES } from "../src/lib/collections/tones.ts";
 
 const NOW = new Date("2026-10-22T19:00:00Z"); // Thu Oct 22, 12:00 PM PDT
 
@@ -324,5 +324,36 @@ describe("AI polish (mocked)", () => {
     }
     const { impl } = mockFetch([{ status: 500, json: { error: "boom" } }]);
     await assert.rejects(polishText({ provider: "openai", model: "m", key: "k" }, facts, impl), /OpenAI error 500/);
+  });
+});
+
+describe("Keep my voice", () => {
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
+  it("becomes the default after ~20 words unless the user picked a tone", () => {
+    assert.equal(effectiveTone(null, words(20), "firm"), "firm");
+    assert.equal(effectiveTone(null, words(21), "firm"), "voice");
+    assert.equal(effectiveTone("strict", words(40), "firm"), "strict");
+    assert.equal(effectiveTone("firm", words(40), "friendly"), "firm"); // clicking the stage chip wins
+    assert.equal(effectiveTone(null, "", "friendly"), "friendly");
+  });
+  it("instruction keeps the writer's words, length and clean drafts", () => {
+    const d = toneDescription("voice", "");
+    for (const s of ["spelling, grammar and punctuation only", "sentence order", "contractions", "do not add transitions", "within 10%", "return it unchanged", '"kindly"', '"at your earliest convenience"']) {
+      assert.ok(d.includes(s), s);
+    }
+    assert.equal(TONES[0].key, "voice");
+  });
+  it("every tone's prompt bans boilerplate and exclamation marks; voice adds no greeting", () => {
+    for (const t of TONES) {
+      const p = systemPrompt({ mode: "email", toneDescription: toneDescription(t.key, ""), keepVoice: t.key === "voice" });
+      for (const phrase of ['"kindly"', '"please be advised"', '"at your earliest convenience"', '"we appreciate your prompt attention"', '"I hope this message finds you well"', "No exclamation marks."]) {
+        assert.ok(p.includes(phrase), `${t.key}: ${phrase}`);
+      }
+      assert.equal(p.includes("Short greeting"), t.key !== "voice");
+    }
+    assert.match(systemPrompt({ mode: "sms", toneDescription: "x", keepVoice: true }), /300-character limit wins/);
+  });
+  it("strips exclamation marks the model adds anyway", () => {
+    assert.equal(cleanAiText("Hi Jane! Thanks!! Really?!"), "Hi Jane. Thanks. Really?");
   });
 });

@@ -1,4 +1,4 @@
-import { SMS_MAX } from "./tones.ts";
+import { BOILERPLATE_PHRASES, SMS_MAX } from "./tones.ts";
 
 /**
  * "Polish with AI" for reminders. Provider and keys come from server env only
@@ -51,6 +51,8 @@ export function pickAi(env: Env): { ok: true; value: AiChoice } | { ok: false; e
 
 export type PolishFacts = {
   mode: "email" | "sms";
+  /** "Keep my voice": edit lightly, no added greeting. */
+  keepVoice?: boolean;
   toneDescription: string;
   tenant: string | null;
   propertyUnit: string;
@@ -61,18 +63,20 @@ export type PolishFacts = {
   draft: string;
 };
 
-export function systemPrompt(f: Pick<PolishFacts, "mode" | "toneDescription">): string {
+export function systemPrompt(f: Pick<PolishFacts, "mode" | "toneDescription" | "keepVoice">): string {
   const where =
     f.mode === "email"
       ? 'The charges table is added below automatically — refer to it as "the charges listed below".'
-      : `This is a text message (SMS): under ${SMS_MAX} characters, one short paragraph; no table is attached.`;
+      : `This is a text message (SMS): under ${SMS_MAX} characters, one short paragraph; no table is attached.${f.keepVoice ? ` If the draft is longer, the ${SMS_MAX}-character limit wins over the length rule: trim it using the writer's own words.` : ""}`;
   return [
     "You edit short rent-balance reminders from Southern California Student Housing (SCSH) to tenants.",
     "Keep every fact and request in the draft.",
     "Add no new facts, promises, deadlines, fees, threats, eviction, legal or credit-reporting language unless the draft says it.",
     "The only dollar amount allowed is the total, written exactly as $X.XX; no other dates or amounts.",
     where,
-    "Short greeting; no sign-off or signature. Plain text, no markdown, no subject line.",
+    f.keepVoice ? "Keep the writer's greeting as written (add none); no sign-off or signature." : "Short greeting; no sign-off or signature.",
+    "Plain text, no markdown, no subject line.",
+    `No corporate boilerplate: never use ${BOILERPLATE_PHRASES.map((p) => `"${p}"`).join(", ")} or similar stock phrases. No exclamation marks.`,
     `Tone: ${f.toneDescription}.`,
   ].join(" ");
 }
@@ -159,12 +163,13 @@ export function extractAiText(provider: AiProvider, json: unknown): string {
     .join("");
 }
 
-/** Strips markdown emphasis/quotes a model may add despite the prompt. */
+/** Strips markdown emphasis/quotes and exclamation marks a model may add despite the prompt. */
 export function cleanAiText(text: string): string {
   return text
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/^\s*["“]|["”]\s*$/g, "")
     .replace(/\n{3,}/g, "\n\n")
+    .replace(/([?.]?)!+/g, (_, mark: string) => mark || ".")
     .trim();
 }
 

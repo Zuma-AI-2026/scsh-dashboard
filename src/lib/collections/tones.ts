@@ -1,6 +1,10 @@
 /** Reminder tones and how the ladder stage suggests one. Pure. */
 
+export const VOICE_INSTRUCTION =
+  "keep my voice — fix spelling, grammar and punctuation only; keep the writer's sentence order, word choices, contractions and informal phrasing; do not reorganise, do not add transitions, do not replace plain words with formal ones (no \"kindly\", \"please be advised\", \"at your earliest convenience\", \"we appreciate your prompt attention\"); keep it the same length within 10%; if the draft is already clean, return it unchanged";
+
 export const TONES = [
+  { key: "voice", label: "Keep my voice", description: VOICE_INSTRUCTION },
   { key: "nice", label: "Nice", description: "warm and kind; a gentle nudge" },
   { key: "casual", label: "Casual", description: "relaxed and conversational, brief" },
   { key: "friendly", label: "Friendly reminder", description: "upbeat and friendly; assumes it was an oversight" },
@@ -16,6 +20,27 @@ export const CUSTOM_TONE_MAX = 120;
 /** AI-shortened texts stay under this many characters. */
 export const SMS_MAX = 300;
 export const TONE_STORAGE_KEY = "scsh.reminder.tone";
+/** Once the draft is longer than this, "Keep my voice" becomes the default tone. */
+export const VOICE_MIN_WORDS = 20;
+
+/** Phrases no tone may use (global rule in every polish prompt). */
+export const BOILERPLATE_PHRASES = ["kindly", "please be advised", "at your earliest convenience", "we appreciate your prompt attention", "I hope this message finds you well"];
+
+export function wordCount(text: string): number {
+  const t = text.trim();
+  return t ? t.split(/\s+/).length : 0;
+}
+
+/**
+ * The tone in effect: the user's explicit pick this session wins; otherwise
+ * "Keep my voice" once they've written > VOICE_MIN_WORDS words; otherwise the
+ * stage suggestion / last choice (`fallback`).
+ */
+export function effectiveTone(picked: ToneKey | null, draft: string, fallback: ToneKey): ToneKey {
+  if (picked) return picked;
+  if (wordCount(draft) > VOICE_MIN_WORDS) return "voice";
+  return fallback;
+}
 
 export function isToneKey(v: unknown): v is ToneKey {
   return v === "custom" || TONES.some((t) => t.key === v);

@@ -9,7 +9,7 @@ import { contactedRecently, contactTooltip, isTextingQuietHours, type LastContac
 import { defaultTo, type ContactChip } from "@/lib/collections/contacts";
 import { figuresWarning, unexpectedFigures } from "@/lib/collections/figures";
 import { parseEmailList } from "@/lib/collections/request";
-import { CUSTOM_TONE_MAX, isToneKey, SMS_MAX, TONE_STORAGE_KEY, TONES, toneForStage, toneLabel, type ToneKey } from "@/lib/collections/tones";
+import { CUSTOM_TONE_MAX, effectiveTone, isToneKey, SMS_MAX, TONE_STORAGE_KEY, TONES, toneForStage, toneLabel, type ToneKey } from "@/lib/collections/tones";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -61,7 +61,7 @@ export function RemindButton({ occupancyId, tenant }: { occupancyId: number; ten
   );
 }
 
-/** Stage suggestion first, then the user's last choice, else Professional. */
+/** Tone before the user has written much: stage suggestion, then their last choice, else Professional. */
 function initialToneFor(stage: Setup["stage"]): { key: ToneKey; custom: string } {
   const fromStage = toneForStage(stage);
   if (fromStage) return { key: fromStage, custom: "" };
@@ -155,10 +155,10 @@ function ComposerBody({ setup }: { setup: Setup }) {
   const total = totalCents(charges);
 
   const [initialTone] = useState(() => initialToneFor(setup.stage));
-  const [toneKey, setToneKey] = useState<ToneKey>(initialTone.key);
+  const [pickedTone, setPickedTone] = useState<ToneKey | null>(null);
   const [customTone, setCustomTone] = useState(initialTone.custom);
   const chooseTone = (key: ToneKey, custom = customTone) => {
-    setToneKey(key);
+    setPickedTone(key);
     setCustomTone(custom);
     try {
       localStorage.setItem(TONE_STORAGE_KEY, JSON.stringify({ key, custom }));
@@ -168,6 +168,12 @@ function ComposerBody({ setup }: { setup: Setup }) {
   const [subject, setSubject] = useState("");
   const shownSubject = subject || defaultSubject(setup.property, setup.unit, total);
   const [message, setMessage] = useState("");
+  const toneKey = effectiveTone(pickedTone, message, initialTone.key);
+  const stageTone = toneForStage(setup.stage);
+  const toneHints = {
+    suggestion: stageTone && setup.stage ? { key: stageTone, stage: setup.stage.name } : null,
+    autoVoice: pickedTone === null && toneKey === "voice",
+  };
   const [beforePolish, setBeforePolish] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "polish" | "preview" | "send" | "text">(null);
   const [notice, setNotice] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
@@ -338,7 +344,7 @@ function ComposerBody({ setup }: { setup: Setup }) {
             placeholder="Write or dictate your message. The charges table, payment note and signature are added below it automatically."
           />
 
-          <ToneRow toneKey={toneKey} customTone={customTone} onChange={chooseTone}>
+          <ToneRow toneKey={toneKey} customTone={customTone} onChange={chooseTone} {...toneHints}>
             <Button size="sm" variant="outline" disabled={busy !== null || charges.length === 0} onClick={() => polish("email", message, setMessage, setBeforePolish)}>
               {busy === "polish" ? <Loader2 className="size-3.5 animate-spin" /> : null}✨ Polish with AI
             </Button>
@@ -414,6 +420,7 @@ function ComposerBody({ setup }: { setup: Setup }) {
           toneKey={toneKey}
           customTone={customTone}
           chooseTone={chooseTone}
+          toneHints={toneHints}
           polish={polish}
           busy={busy}
           setBusy={setBusy}
@@ -496,24 +503,45 @@ function RecipientChips({ chips, to, cc, setTo, setCc }: { chips: ContactChip[];
   );
 }
 
-function ToneRow({ toneKey, customTone, onChange, children }: { toneKey: ToneKey; customTone: string; onChange: (k: ToneKey, custom?: string) => void; children: React.ReactNode }) {
+type ToneHints = { suggestion: { key: ToneKey; stage: string } | null; autoVoice: boolean };
+
+function ToneRow({
+  toneKey,
+  customTone,
+  onChange,
+  suggestion,
+  autoVoice,
+  children,
+}: { toneKey: ToneKey; customTone: string; onChange: (k: ToneKey, custom?: string) => void; children: React.ReactNode } & ToneHints) {
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <label className="space-y-1">
-        <span className={label}>Tone</span>
-        <select className={cn(input, "w-48")} value={toneKey} onChange={(e) => onChange(e.target.value as ToneKey)}>
-          {TONES.map((t) => (
-            <option key={t.key} value={t.key}>
-              {t.label}
-            </option>
-          ))}
-          <option value="custom">Custom…</option>
-        </select>
-      </label>
-      {toneKey === "custom" && (
-        <input className={cn(input, "w-64")} maxLength={CUSTOM_TONE_MAX} value={customTone} placeholder="Describe the tone" onChange={(e) => onChange("custom", e.target.value)} />
-      )}
-      {children}
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="space-y-1">
+          <span className={label}>Tone</span>
+          <select className={cn(input, "w-48")} value={toneKey} onChange={(e) => onChange(e.target.value as ToneKey)}>
+            {TONES.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.label}
+              </option>
+            ))}
+            <option value="custom">Custom…</option>
+          </select>
+        </label>
+        {toneKey === "custom" && (
+          <input className={cn(input, "w-64")} maxLength={CUSTOM_TONE_MAX} value={customTone} placeholder="Describe the tone" onChange={(e) => onChange("custom", e.target.value)} />
+        )}
+        {children}
+      </div>
+      {(suggestion && suggestion.key !== toneKey) || autoVoice ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {autoVoice && <span>Keep my voice: only fixes spelling, grammar and punctuation in what you wrote.</span>}
+          {suggestion && suggestion.key !== toneKey && (
+            <button type="button" onClick={() => onChange(suggestion.key)} className="rounded-full border px-2 py-0.5 hover:bg-muted hover:text-foreground">
+              Suggested for {suggestion.stage}: {TONES.find((t) => t.key === suggestion.key)?.label}
+            </button>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -641,6 +669,7 @@ function TextTab({
   toneKey,
   customTone,
   chooseTone,
+  toneHints,
   polish,
   busy,
   setBusy,
@@ -654,6 +683,7 @@ function TextTab({
   toneKey: ToneKey;
   customTone: string;
   chooseTone: (k: ToneKey, custom?: string) => void;
+  toneHints: ToneHints;
   polish: (mode: "email" | "sms", draft: string, apply: (t: string) => void, keep: (t: string) => void) => Promise<void>;
   busy: string | null;
   setBusy: (b: null | "text") => void;
@@ -717,7 +747,7 @@ function TextTab({
       <p className={cn("text-xs", sms.length > SMS_MAX ? "text-warning" : "text-muted-foreground")}>
         {sms.length} characters{sms.length > SMS_MAX ? ` — over ${SMS_MAX}; "Shorten with AI" can trim it` : ""}
       </p>
-      <ToneRow toneKey={toneKey} customTone={customTone} onChange={chooseTone}>
+      <ToneRow toneKey={toneKey} customTone={customTone} onChange={chooseTone} {...toneHints}>
         <Button size="sm" variant="outline" disabled={busy !== null || charges.length === 0} onClick={() => polish("sms", sms, setSms, setBeforePolish)}>
           {busy === "polish" ? <Loader2 className="size-3.5 animate-spin" /> : null}✨ Shorten with AI
         </Button>

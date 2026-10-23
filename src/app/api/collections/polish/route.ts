@@ -28,6 +28,7 @@ export async function POST(req: Request) {
   try {
     const text = await polishText(ai.value, {
       mode: p.mode,
+      keepVoice: p.toneKey === "voice",
       toneDescription: toneDescription(isToneKey(p.toneKey) ? p.toneKey : "professional", p.customTone),
       tenant: setup.tenant,
       propertyUnit: [setup.property, setup.unit].filter(Boolean).join(" "),
